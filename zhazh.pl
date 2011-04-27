@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 print "Content-type: text/plain\n\n";
 print "Monitoring System\n";
-system("vmstat");
+system("netstat");
 print "*" x 120,"\n";
 system("df -H");
 
