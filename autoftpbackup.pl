@@ -8,4 +8,3 @@ $ftp->cwd("/www");
 $remotefile = "index.php";
 $localfile = "file.txt";
 $ftp->get($remotefile, $localfile) or die "Can not get file.\n";
-$ftp->quit();
