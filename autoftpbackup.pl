@@ -2,10 +2,8 @@
 #file autoftpbackup.pl
 #auto backup file
 use Net::FTP;
-$ftp = Net::FTP->new("174.121.21.12",Timeout=> 300) or die "Could not connect.\n";
-$username="daihu";
-$password="3xzZCoidvs";
-$ftp->login($username,$password) or die "Could not connect.\n";
-$ftp->pwd();
-
-
+$ftp = Net::FTP->new("174.121.21.12", Debug => 0)or die "Cannot connect to some.host.name: $@";
+$ftp->login("daihu",'3xzZCoidvs')or die "Cannot login ", $ftp->message;
+$ftp->cwd("/www")or die "Cannot change working directory ", $ftp->message;
+$ftp->get("index.php")or die "get failed ", $ftp->message;
+$ftp->quit;
