@@ -12,7 +12,7 @@ if ($response eq "yes" or $response eq "y"){
 	
 }
 else {
-	print "OK!!!!! Try again later";
+	print "OK!!!!! Try again later\n";
 }
 $now=localtime();
 print "$name you can this script on $now";
