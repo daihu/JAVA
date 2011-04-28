@@ -7,3 +7,4 @@ use warnings;
 print "perl -ne 'print;' emp.first";
 #windows : use double quotes
 #perl -ne " print; " emp.first
+#perl -ne "print if/^Igor/; " emp.first
