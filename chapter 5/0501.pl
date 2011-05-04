@@ -1,3 +1,7 @@
+#!/usr/bin/perl
+use warnings;
+use diagnostics;
+
 # Scalar, array, and hash assignment
 $salary=50000;                   # Scalar assignment
 @months=('Mar', 'Apr', 'May');   # Array assignment
