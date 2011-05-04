@@ -1,3 +1,6 @@
+#!/usr/bin/perl
+use warnings;
+use diagnostics;
 %seasons=("Sp" => "Spring", 
           "Su" => "Summer", 
           "F"  => "Fall", 
