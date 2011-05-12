@@ -1,4 +1,4 @@
-#!c:\perl\bin\perl.exe
+#!/usr/bin/perl
 ##
 ##  printenv -- demo CGI program which just prints its environment
 ##
