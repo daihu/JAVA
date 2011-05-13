@@ -12,6 +12,8 @@ if( -s $stop){
 
 system("/etc/init.d/tomcat stop");
 system("unzip /usr/apache-tomcat-6.0.29/webapps/BizServ/WEB-INF/classes/com.zip -d /usr/apache-tomcat-6.0.29/webapps/BizServ/WEB-INF/classes/ ");
+system("cd /usr/apache-tomcat-6.0.29/webapps/BizServ/WEB-INF/classes");
+system("chown zhazh01:zhazh01 com -R");
 system("/etc/init.d/tomcat start");
 
 
