@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 use warnings;
 use diagnostics;
-# use strict;
+use strict;
 use Carp;
 
 # split tomcat output file Catalina.out
@@ -13,3 +13,4 @@ $day-=1;
 #$day=1;
 my $today=sprintf("%04u-%02u-%02u",$year,$mon,$day);
 print("$today");
+
