@@ -3,7 +3,9 @@ use warnings;
 use diagnostics;
 use Carp;
 $data_file="wrestledata.txt";
-open(DAT, $data_file) || die("Could not open file!");
-@raw_data=<DAT>;
-close(DAT);
+open(FH, $data_file) || die("Could not open file!");
+while(<FH>){
+	print if /^perl/;
+}
+
 
