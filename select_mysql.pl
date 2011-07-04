@@ -18,6 +18,7 @@ my $sqr = $dbh->prepare("SELECT * FROM user");
 $sqr->execute();
 
 while(my $ref = $sqr->fetchrow_hashref()) {
+    print "User:$ref->";
     print "$ref->n";
 }
 
