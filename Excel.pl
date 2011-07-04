@@ -8,9 +8,9 @@ use Encode;
 #
 my $host = "127.0.0.1";  #mysql相关信息
 my $port = "3306";
-my $db = "zichan_db";
+my $db = "zhazh";
 my $user = "root";
-my $password = "";
+my $password = "111111";
 my $dsn = "dbi:mysql:database=$db:hostname=$host:port=$port";
 #
 my ($sec,$min,$hour,$mday,$mon,$year,$wday)=localtime(time);
