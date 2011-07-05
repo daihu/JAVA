@@ -16,6 +16,7 @@ $dbh->do("set names gbk ");
 my $sqr = $dbh->prepare("update m_item_image set resUrl=replace(resUrl,'http://211.151.185.36','http://res.zhazh.com') where resUrl like 'http://211.151.185.36%'");
 $sqr->execute();
 
+
 while ( my $ref = $sqr->fetchrow_hashref() ) {
 	print "$ref->{'id'}\n";
 	print "$ref->{itemId}\n ";
