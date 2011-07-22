@@ -10,9 +10,9 @@ my $username="root";
 my $password="eschange1208";
 my $enginetype="myisam";
 my $enginetype_i="innodb";
-my $database="zhazh";
 
-system  "/usr/local/mysql/bin/mysqlslap --defaults-file=/etc/my.cnf --concurrency=$concurrency_num  --iterations=$iterations_num --number-of-queries=$queries_num -u$username -p$password  --auto-generate-sql --auto-generate-sql-load-type=mixed --engine=$enginetype,$enginetype_i --auto-generate-sql-add-autoincrement --create-schema=$database --number-int-cols=4 --number-char-cols=35 -S /tmp/mysql.sock --debug-info ";
+
+system  "/usr/local/mysql/bin/mysqlslap --defaults-file=/etc/my.cnf --concurrency=$concurrency_num  --iterations=$iterations_num --number-of-queries=$queries_num -u$username -p$password  --auto-generate-sql --auto-generate-sql-load-type=mixed --engine=$enginetype,$enginetype_i --auto-generate-sql-add-autoincrement  -S /tmp/mysql.sock --debug-info ";
 
 
 
