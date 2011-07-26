@@ -4,23 +4,23 @@ use strict;
 use warnings;
 use DBI;
 use Time::HiRes;
-use POSIX "strftime";
+#use POSIX "strftime";
 my $host         = 'localhost';
 my $user         = 'root';
 my $pass         = 'eschange1208';
 my $port         = '3306';
 my $max_behind_m = 120;
-my $check_log    = '/var/log/mysql_check_log';
+#my $check_log    = '/var/log/mysql_check_log';
 
 # open  log--file
-open (FH, ">> $check_log") or die $!;
+#open (FH, ">> $check_log") or die $!;
 
 # connect to servers (this)
 my $this_dbh = &MysqlConnect( $host, $port, $user, $pass );
 
 # Get slave info
 my $slave_status = &MysqlQuery( $this_dbh, 'show slave status' );
-print FH "ERROR: SQL Query Error: " . $this_dbh->errstr unless ($slave_status);
+#print FH "ERROR: SQL Query Error: " . $this_dbh->errstr unless ($slave_status);
 my $Slave_IO              = $slave_status->{Slave_IO_Running};
 my $Slave_SQL             = $slave_status->{Slave_SQL_Running};
 my $Seconds_Behind_Master = $slave_status->{Seconds_Behind_Master};
