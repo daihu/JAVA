@@ -1,4 +1,8 @@
+<<<<<<< HEAD
+	#!/usr/bin/perl
+=======
 #!/usr/bin/perl -w
+>>>>>>> branch 'master' of ssh://git@github.com/daihu/JAVA.git
 use warnings;
 use diagnostics;
 use Carp;
