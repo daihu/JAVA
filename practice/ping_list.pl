@@ -1,9 +1,9 @@
 #!/usr/bin/perl
 use warnings;
 use strict;
-use Email::Send;
-use Email::Send::Gmail;
-use Email::Simple::Creator;
+#use Email::Send;
+#use Email::Send::Gmail;
+#use Email::Simple::Creator;
 my @list = qw/
 1.1.1.1
 2.2.2.2
