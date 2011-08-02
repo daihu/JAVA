@@ -1,0 +1,19 @@
+#!/usr/bin/perl
+use warnings;
+use diagnostics;
+use Carp;
+
+
+
+# A greedy quantifier
+$string="I got a cup of sugar and two cups of flour 
+         from the cupboard.";
+
+$string =~ s/cup.*/tablespoon/;
+print "$string\n";
+
+# Turning off greed
+$string="I got a cup of sugar and two cups of flour 
+         from the cupboard.";
+$string =~ s/cup.*?/tablespoon/;
+print "$string\n";
