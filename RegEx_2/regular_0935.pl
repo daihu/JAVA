@@ -1,0 +1,14 @@
+#!/usr/bin/perl
+
+# Remembering subpatterns
+while(<DATA>){
+	s/([Jj]on)/$1athan/;  
+	print;
+}
+__DATA__
+Steve Blenheim  
+Betty Boop
+Igor Chevsky
+Norma Cord
+Jon DeLoach
+Karen Evich
