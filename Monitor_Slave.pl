@@ -20,7 +20,7 @@ my $dbh = &MysqlConnect( $host, $port, $user, $pass );
 
 # Get slave info
 my $slave_status = &MysqlQuery( $dbh, 'show slave status');
-#print FH "ERROR: SQL Query Error: " . $this_dbh->errstr unless ($slave_status);
+print FH "ERROR: SQL Query Error: " . dbh->errstr unless ($slave_status);
 my $Slave_IO              = $slave_status->{Slave_IO_Running};
 my $Slave_SQL             = $slave_status->{Slave_SQL_Running};
 my $Seconds_Behind_Master = $slave_status->{Seconds_Behind_Master};
