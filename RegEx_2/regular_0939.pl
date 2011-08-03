@@ -1,0 +1,17 @@
+#!/usr/bin/perl
+use warnings;
+use diagnostics;
+use Carp;
+
+# Backreferencing
+while(<DATA>){
+	($first, $last)=/(\w+) (\w+)/;   # Could be: (\S+) (\S+)/
+	print "$last, $first\n"; 
+}
+__DATA__
+Steve Blenheim
+Betty Boop
+Igor Chevsky
+Norma Cord
+Jon DeLoach
+Betty Boop
