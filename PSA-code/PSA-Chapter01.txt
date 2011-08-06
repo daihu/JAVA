@@ -1,0 +1,9 @@
+Example code from Perl for System Administration by David N. Blank-Edelman
+O'Reilly and Associates, 1st Edition, ISBN 1-56592-609-9
+
+Chapter One
+===========
+#*
+#* permanently drops privs
+#*
+($<,$>) = (getpwnam('nobody'),getpwnam('nobody'));

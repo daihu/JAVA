@@ -1,0 +1,927 @@
+Example code from Perl for System Administration by David N. Blank-Edelman
+O'Reilly and Associates, 1st Edition, ISBN 1-56592-609-9
+
+Chapter Eight
+=============
+
+#*
+#* sending mail using sendmail (from the Perl FAQ)
+#*
+
+# assumes we have sendmail installed
+open(SENDMAIL, "|/usr/lib/sendmail -oi -t -odq") or 
+  die "Can't fork for sendmail: $!\n";
+print SENDMAIL <<"EOF";
+From: User Originating Mail <me\@host>
+To: Final Destination <you\@otherhost>
+Subject: A relevant subject line
+
+Body of the message goes here after the blank line
+in as many lines as you like.
+EOF
+close(SENDMAIL) or warn "sendmail didn't close nicely"; 
+-------
+#*
+#* sending mail using AppleScript from MacPerl
+#*
+
+$to="someone\@example.com";
+$from="me\@example.com";
+$subject="Hi there";
+$body="message body\n";
+
+MacPerl::DoAppleScript(<<EOC);
+tell application "Eudora"
+
+    make message at end of mailbox "out"
+       
+    -- 0 is the current message
+    set field \"from\" of message 0 to \"$from\"
+    set field \"to\" of message 0 to \"$to\"
+    set field \"subject\" of message 0 to \"$subject\"
+    set body of message 0 to \"$body\"
+    queue message 0
+    connect with sending without checking
+    quit
+end tell
+EOC
+-------
+#*
+#* send mail using Apple Events from MacPerl
+#*
+
+use Mac::Glue ':glue';
+
+$e=new Mac::Glue 'Eudora';
+$to="someone\@example.com";
+$from="me\@example.com";
+$subject="Hi there";
+$body="message body";
+
+$e->make(
+	new => 'message',
+	at => location(end => $e->obj(mailbox => 'Out'))
+);
+
+$e->set($e->obj(field => from    => message => 0), to => $from);
+$e->set($e->obj(field => to      => message => 0), to => $to);
+$e->set($e->obj(field => subject => message => 0), to => $subject);
+$e->set($e->prop(body => message => 0), to => $body);
+
+$e->queue($e->obj(message => 0));
+$e->connect(sending => 1, checking => 0);
+$e->quit;
+-------
+#*
+#* send mail using MAPI (via OLE) with Outlook on NT/2000
+#*
+
+$to="me\@example.com";
+$subject="Hi there";
+$body="message body\n";
+
+use Win32::OLE;
+
+# init OLE, COINIT_OLEINITIALIZE required when using MAPI.Session objects
+Win32::OLE->Initialize(Win32::OLE::COINIT_OLEINITIALIZE);
+die Win32::OLE->LastError(),"\n" if Win32::OLE->LastError();
+
+# create a session object that will call Logoff when it is destroyed
+my $session = Win32::OLE->new('MAPI.Session','Logoff');
+die Win32::OLE->LastError(),"\n" if Win32::OLE->LastError();
+
+# log into that session using the default OL98 Internet Profile
+$session->Logon('Microsoft Outlook Internet Settings');
+die Win32::OLE->LastError(),"\n" if Win32::OLE->LastError();
+
+# create a message object
+my $message = $session->Outbox->Messages->Add;
+die Win32::OLE->LastError(),"\n" if Win32::OLE->LastError();
+
+# create a recipient object for that message object
+my $recipient = $message->Recipients->Add;
+die Win32::OLE->LastError(),"\n" if Win32::OLE->LastError();
+
+# populate the recipient object
+$recipient->{Name} = $to;
+$recipient->{Type} = 1; # 1 = "To:", 2 = "Cc:", 3 = "Bcc:"
+
+# all addresses have to be resolved against a directory 
+# (in this case probably your Address book). Full addresses 
+# usually resolve to themselves, so this line in most cases will 
+# not modify the recipient object.
+$recipient->Resolve();
+die Win32::OLE->LastError(),"\n" if Win32::OLE->LastError();
+
+# populate the Subject: line and message body
+$message->{Subject} = $subject;
+$message->{Text} = $body;
+
+# queue the message to be sent
+# 1st argument = save copy of message
+# 2nd argument = allows user to change message w/dialog box before sent
+# 3rd argument = parent window of dialog if 2nd argument is True
+$message->Send(0, 0, 0);
+die Win32::OLE->LastError(),"\n" if Win32::OLE->LastError();
+
+# explicitly destroy the $session object, calling $session->Logoff 
+# in the process
+undef $session; 
+-------
+#*
+#* sending mail using Mail::Mailer
+#*
+
+use Mail::Mailer;
+
+$from="me\@example.com";
+$to="you\@example.com";
+$subject="Hi there";
+$body="message body\n";
+
+$type="smtp";
+$server="mail.example.com";
+
+my $mailer = Mail::Mailer->new($type, Server => $server) or
+  die "Unable to create new mailer object:$!\n";
+
+$mailer->open({From => $from, 
+               To => $to, 
+               Subject => $subject}) or 
+  die "Unable to populate mailer object:$!\n";
+
+print $mailer $body;
+$mailer->close;
+-------
+#*
+#* subroutine for performing exponential backoff (uses a closure)
+#*
+
+$max  = 24*60*60; # maximum amount of delay in seconds (1 day)
+$unit = 60;       # increase delay by measures of this unit (1 min)
+
+# provide a closure with the time we last sent a message and 
+# the last power of 2 we used to compute the delay interval. 
+# The subroutine we create will return a reference to an 
+# anonymous array with this information
+sub time_closure {
+    my($stored_sent,$stored_power)=(0,-1);
+    return sub {
+       (($stored_sent,$stored_power) = @_) if @_;
+       [$stored_sent,$stored_power];
+    }
+};
+
+$last_data=&time_closure; # create our closure
+
+# return true first time called and then once after an 
+# exponential delay
+sub expbackoff {
+    my($last_sent,$last_power) = @{&$last_data};
+
+    # reply true if this is the first time we've been asked, or if the
+    # current delay has elapsed since we last asked. If we return true, 
+    # we stash away the time of our last affirmative reply and increase 
+    # the power of 2 used to compute the delay.
+    if (!$last_sent or
+       ($last_sent + 
+         (($unit * 2**$last_power >= $max) ? 
+             $max : $unit * 2**$last_power) <= time())){
+         	       &$last_data(time(),++$last_power);
+              return 1;
+    }
+    else {
+	   return 0;
+    }
+}
+-------
+#*
+#* subroutine for performing exponential ramp up (uses a closure)
+#*
+
+$max  = 60*60*24; # maximum amount of delay in seconds (1 day)
+$min  = 60*5;     # minimum amount of delay in seconds (5 minutes)
+$unit = 60;       # decrease delay by measures of this unit (1 min)
+
+$start_power = int log($max/$unit)/log(2); # find the closest power of 2 
+
+sub time_closure {
+    my($last_sent,$last_power)=(0,$start_power+1);
+    return sub {
+	(($last_sent,$last_power) = @_) if @_;
+	# keep exponent positive
+	$last_power = ($last_power > 0) ? $last_power : 0; 
+	[$last_sent,$last_power];
+    }
+};
+
+$last_data=&time_closure; # create our closure
+
+# return true first time called and then once after an 
+# exponential ramp up
+sub exprampup {
+    my($last_sent,$last_power) = @{&$last_data};
+
+    # reply true if this is the first time we've been asked, or if the
+    # current delay has elapsed since we last asked. If we send, we
+    # stash away the time of our last affirmative reply and increased
+    # power of 2 used to compute the delay.
+    if (!$last_sent or
+	($last_sent + 
+         (($unit * 2**$last_power <= $min) ? 
+	  $min : $unit * 2**$last_power) <= time())){
+	    &$last_data(time(),--$last_power);
+            return 1;
+    }
+    else {
+	return 0;
+    }
+}
+-------
+#*
+#* a program that collates the responses of several machines and sends out
+#* a summary piece of email
+#*
+
+use Mail::Mailer;
+use Text::Wrap;
+
+# the list of machine reporting in
+$repolist = "/project/machinelist"; 
+# the directory where they write files
+$repodir  = "/project/reportddir";  
+# filesystem separator for portability, 
+# could use File::Spec module instead 
+$separator= "/";                    
+# send mail "from" this address
+$reportfromaddr  = "project\@example.com"; 
+# send mail to this address
+$reporttoaddr    = "project\@example.com"; 
+# read the list of machine reporting in into a hash. 
+# Later we de-populate this hash as each machine reports in, 
+# leaving behind only the machine which are missing in action
+open(LIST,$repolist) or die "Unable to open list $repolist:$!\n";
+while(<LIST>){
+    chomp;
+    $missing{$_}=1;
+    $machines++;
+}
+
+# read all of the files in the central report directory
+# note:this directory should be cleaned out automatically 
+# by another script
+opendir(REPO,$repodir) or die "Unable to open dir $repodir:$!\n";
+
+while(defined($statfile=readdir(REPO))){
+    next unless -f $repodir.$separator.$statfile;
+    
+    # open each status file and read in the one-line status report
+    open(STAT,$repodir.$separator.$statfile) 
+      or die "Unable to open $statfile:$!\n";
+
+    chomp($report = <STAT>);
+
+    ($hostname,$result,$details)=split(' ',$report,3);
+
+    warn "$statfile said it was generated by $hostname!\n"
+      if($hostname ne $statfile);
+
+    # hostname is no longer considered missing
+    delete $missing{$hostname}; 
+    # populate these hashes based on success or failure reported
+    if ($result eq "success"){
+        $success{$hostname}=$details;
+        $succeeded++;
+    }
+    else {
+        $fail{$hostname}=$details;
+        $failed++;
+    }	
+    close(STAT);
+}		
+closedir(REPO);
+
+# construct a useful subject for our mail message
+if ($successes == $machines){
+    $subject = "[report] Success: $machines";
+}
+elsif ($failed == $machines or scalar keys %missing >= $machines) {
+    $subject = "[report] Fail: $machines";
+}
+else {
+    $subject = "[report] Partial: $succeeded ACK, $failed NACK".
+      ((%missing) ? ", ".scalar keys %missing." MIA" : "");
+}
+
+# create the mailer object and populate the headers
+$type="sendmail"; 
+my $mailer = Mail::Mailer->new($type) or
+  die "Unable to create new mailer object:$!\n";
+
+$mailer->open({From=>$reportfromaddr, To=>$reporttoaddr, Subject=>$subject}) or 
+  die "Unable to populate mailer object:$!\n";
+
+# create the body of the message
+print $mailer "Run report from $0 on " . scalar localtime(time) . "\n";
+
+if (keys %success){
+    print $mailer "\n==Succeeded==\n";
+    foreach $hostname (sort keys %success){
+	print $mailer "$hostname: $success{$hostname}\n";
+    }
+}
+
+if (keys %fail){
+    print $mailer "\n==Failed==\n";
+    foreach $hostname (sort keys %fail){
+	print $mailer "$hostname: $fail{$hostname}\n";
+    }
+}
+
+if (keys %missing){
+    print $mailer "\n==Missing==\n";
+    print $mailer wrap("","",join(" ",sort keys %missing)),"\n";
+}
+
+# send the message
+$mailer->close;
+-------
+#*
+#* a simple network logging daemon that collates responses
+#*
+
+use IO::Socket;
+use Text::Wrap; # used to make the output prettier
+
+# the list of machine reporting in
+$repolist = "/project/machinelist"; 
+# the port number clients should connect to 
+$serverport = "9967";               
+
+&loadmachines; # load the machine list
+
+# set up our side of the socket
+$reserver = IO::Socket::INET->new(LocalPort => $serverport,
+                                  Proto     => "tcp",
+                                  Type      => SOCK_STREAM,
+                                  Listen    => 5,
+                                  Reuse     => 1)
+  or die "Unable to build our socket half: $!\n";
+
+# start listening on it for connects
+while(($connectsock,$connectaddr) = $reserver->accept()){
+
+    # the name of the client which has connected to us
+    $connectname = gethostbyaddr((sockaddr_in($connectaddr))[1],AF_INET);
+
+    chomp($report=$connectsock->getline);
+
+    ($hostname,$result,$details)=split(' ',$report,3);
+
+    # if we've been told to dump our info, print out a ready-to-go mail
+    # message and reinitialize all of our hashes/counters
+    if ($hostname eq "DUMPNOW"){
+	&printmail($connectsock);
+	close($connectsock);
+	undef %success;
+	undef %fail;
+	$succeeded = $failed = 0;
+	&loadmachines;
+	next;
+    }
+
+    warn "$connectname said it was generated by $hostname!\n"
+      if($hostname ne $connectname);
+    delete $missing{$hostname};
+    if ($result eq "success"){
+	$success{$hostname}=$details;
+	$succeeded++;
+    }
+    else {
+	$fail{$hostname}=$details;
+	$failed++;
+    }	
+    close($connectsock);
+}
+close($reserver);
+
+# loads the list of machines from the given file
+sub loadmachines {
+    undef %missing;
+    undef $machines; 
+    open(LIST,$repolist) or die "Unable to open list $repolist:$!\n";
+    while(<LIST>){
+	chomp;
+	$missing{$_}=1;
+	$machines++;
+    }
+}
+
+# prints a ready to go mail message. The first line is the subject, 
+# subsequent lines are all the body of the message
+sub printmail{
+    ($socket) = $_[0];
+
+    if ($successes == $machines){
+	$subject = "[report] Success: $machines";
+    }
+    elsif ($failed == $machines or scalar keys %missing >= $machines) {
+	$subject = "[report] Fail: $machines";
+    }
+    else {
+	$subject = "[report] Partial: $succeeded ACK, $failed NACK".
+	  ((%missing) ? ", ".scalar keys %missing." MIA" : "");
+    }
+
+    print $socket "$subject\n";
+    
+    print $socket "Run report from $0 on ".scalar localtime(time)."\n";
+
+    if (keys %success){
+	print $socket "\n==Succeeded==\n";
+	foreach $hostname (sort keys %success){
+	    print $socket "$hostname: $success{$hostname}\n";
+	}
+    }
+
+    if (keys %fail){
+	print $socket "\n==Failed==\n";
+	foreach $hostname (sort keys %fail){
+	    print $socket "$hostname: $fail{$hostname}\n";
+	}
+    }
+
+    if (keys %missing){
+	print $socket "\n==Missing==\n";
+	print $socket wrap("","",join(" ",sort keys %missing)),"\n";
+    }
+}
+-------
+#*
+#* a sample client for the above daemon
+#*
+
+use IO::Socket;
+
+# the port number clients should connect to
+$serverport = "9967";
+# and the name of the server
+$servername = "reportserver";    
+# name to IP address
+$serveraddr = inet_ntoa(scalar gethostbyname($servername)); 
+$reporttoaddr  = "project\@example.com";
+$reportfromaddr  = "project\@example.com";
+
+$reserver = IO::Socket::INET->new(PeerAddr => $serveraddr,
+                                  PeerPort => $serverport,
+                                  Proto    => "tcp",
+                                  Type     => SOCK_STREAM)
+  or die "Unable to build our socket half: $!\n";
+
+
+if ($ARGV[0] ne "-m"){
+    print $reserver $ARGV[0];
+}
+else {
+    use Mail::Mailer;
+
+    print $reserver "DUMPNOW\n";
+    chomp($subject = <$reserver>);
+    $body = join("",<$reserver>);
+
+    $type="sendmail";
+    my $mailer = Mail::Mailer->new($type) or
+      die "Unable to create new mailer object:$!\n";
+
+    $mailer->open({
+		   From => $reportfromaddr,
+		   To => $reporttoaddr,
+		   Subject => $subject
+		  }) or die "Unable to populate mailer object:$!\n";
+
+    print $mailer $body;
+    $mailer->close;
+}
+
+close($reserver);
+-------
+#*
+#* a subroutine (and example use of the subroutine) that provides 
+#* decent problem reporting output
+#*
+
+use Text::Wrap;
+
+sub problemreport {
+# $shortcontext should be a one-line description of the problem
+# $usercontext should be a detailed description of the problem
+# $nextstep should be the best suggestion for how to remedy the problem 
+    my($shortcontext,$usercontext,$nextstep) = @_;
+    my($filename, $line, $subroutine) = (caller(1))[1,2,3];
+    
+    push(@return,"Problem with $filename: $shortcontext\n");
+
+    push(@return,"*** Problem report for $filename ***\n\n");
+    push(@return,fill("","","- Problem: $usercontext")."\n\n");
+    push(@return,"- Location: line $line of file $filename in
+                 $subroutine\n\n");
+    push(@return,"- Occurred: ".scalar localtime(time)."\n\n");
+
+    push(@return,"- Next step: $nextstep\n");
+
+    \@return;
+}
+    
+sub fireperson {
+    $report = &problemreport("the computer is on fire",<<EOR,<<EON);
+While running the accounting report, smoke started pouring out of the 
+back of the machine. This occurred right after we processed the ORA 
+pension plan.
+EOR
+Please put fire out before continuing.
+EON
+
+  print @{$report};
+
+}
+
+&fireperson;
+-------
+#*
+#* parsing an email message
+#*
+
+use Mail::Internet;
+
+$messagefile = "mail";
+
+open(MESSAGE,"$messagefile") or die "Unable to open $messagefile:$!\n";
+$message = new Mail::Internet \*MESSAGE;
+close(MESSAGE);
+-------
+#*
+#* parsing an email message header
+#*
+
+use Mail::Header;
+
+$messagefile = "mail";
+
+open(MESSAGE,"$messagefile") or die "Unable to open $messagefile:$!\n";
+$header = new Mail::Header \*MESSAGE;
+close(MESSAGE);
+
+print join("\n",sort $header->tags);
+-------
+#*
+#* display the path a message took to get to us
+#*
+
+use Mail::Header;
+
+$header = new Mail::Header \*STDIN;
+
+$header->unfold('Received');
+@received = $header->get('Received');
+
+for (reverse @received){
+    chomp;
+    parseline($_);
+    if (!defined $ehelo and !defined $validname and !defined $validip){
+	print "$_\n";
+    }
+    else {
+	write;
+    }
+}
+
+format STDOUT =
+@<<<<<<<<<<<<<<<<<<<<<<  @<<<<<<<<<<<<<<<<<<<<<  @<<<<<<<<<<<<<<<
+$ehelo,$validname,$validip
+.
+
+sub parseline {
+    my $line = $_;
+
+    # "normal" -- from HELO (REAL [IP])
+    if (/from\s+(\w\S+)\s*\((\S+)\s*\[(\d+\.\d+\.\d+\.\d+)/){
+	($ehelo,$validname,$validip) = ($1,$2, $3);
+    }
+    # can't reverse resolve -- from HELO ([IP])
+    elsif (/from\s+(\w\S+)\s+\(\[(\d+\.\d+\.\d+\.\d+)\]/){
+	($ehelo,$validname,$validip) = ($1,undef, $2);
+    }	
+    # exim -- from [IP] (helo=[HELO IP])
+   elsif (/from\s+\[(\d+\.\d+\.\d+\.\d+)\]\s+\(helo=\[(\d+\.\d+\.\d+\.\d+)\]/){
+	($validip,$ehelo,$validname) = ($1,$2, undef);
+    }	
+    # Sun Internet Mail Server -- from [IP] by HELO
+    elsif (/from\s+\[(\d+\.\d+\.\d+\.\d+)\]\s+by\s+(\S+)/){
+	($validip,$ehelo,$validname) = ($1,$2, undef);
+    }	
+    # Microsoft SMTPSVC -- from HELO - (IP)
+    elsif (/from\s+(\S+)\s+-\s+(\d+\.\d+\.\d+\.\d+)\s+/){
+	($ehelo,$validname,$validip) = ($1,$2, $3);
+    }
+    else { # punt!
+	$ehelo = $validname = $validip = undef;
+    }
+
+    return [$ehelo,$validname,$validip];
+}
+-------
+#*
+#* subroutine that checks if the name we were given matches the IP address
+#* we recorded when we received the mail
+#*
+
+use Socket;
+
+sub checkrev{
+    my($ip,$name) = @_;
+
+    return 0 unless ($ip and $name);
+
+    my $namelook = gethostbyaddr(inet_aton($ip),AF_INET);
+    my $iplook   = gethostbyname($name);
+
+    $iplook = inet_ntoa($iplook) if $iplook;
+    
+    # may be recorded with different capitilization
+    if ($iplook eq $ip and lc $namelook eq lc $name){
+        return 0;
+    }
+    else {
+        return 1;
+    }
+}
+-------
+#*
+#* display the contents of a local sendmail blacklist
+#*
+
+$blacklist = "/etc/mail/blacklist.db";
+
+use BerkeleyDB;
+
+# tie the hash %blist to the blacklist file, using Berkeley DB 
+# to retrieve values
+tie %blist, 'BerkeleyDB::Hash', -Filename  => $blacklist
+  or die "Cannot open file $filename: $! $BerkeleyDB::Error\n" ;
+
+# iterate over each key and value in this file, printing only 
+# the REJECT entries
+while(($key,$value) = each %blist){
+    # the entry in the list can also be marked "OK", "RELAY", etc. 
+    next if ($value ne "REJECT"); 
+    
+    print "$key\n";
+}
+-------
+#*
+#* two ways to check against a local black list
+#*
+
+use BerkeleyDB;
+
+$blacklist = "/etc/mail/blacklist.db";
+
+&loadblist;
+
+# take a host name as a command line argument and complain 
+# if it is in the blacklist
+if (defined &checkblist($ARGV[0])){
+    print "*** found $found in our blacklist\n";
+}
+
+# load the blacklist into an array of anonymous subroutines
+sub loadblist{
+    tie %blist, 'BerkeleyDB::Hash', -Filename  => $blacklist
+      or die "Cannot open file $filename: $! $BerkeleyDB::Error\n" ;
+
+    while(my($key,$value) = each %blist){
+        # the blacklist can also say "OK", "RELAY", and etc. 
+        next if ($value ne "REJECT"); 
+        push(@blisttests, eval 'sub {$_[0] =~ /\Q$key/o and $key}');
+    }    
+}
+
+sub checkblist{
+    my($line) = shift;
+
+    foreach $subref (@blisttests){
+        return $found if ($found = &$subref($line));
+    }
+    return undef;
+}
+
+### OR ###
+
+sub loadblist{
+    tie %blist, 'BerkeleyDB::Hash', -Filename  => $blacklist
+      or die "Cannot open file $filename: $! $BerkeleyDB::Error\n" ;
+
+    while(my($key,$value) = each %blist){
+        # the blacklist can also say "OK", "RELAY", and etc. 
+        next if ($value ne "REJECT"); 
+        push(@blisttests,[qr/\Q$key/,$key]);
+    }    
+}
+
+sub checkblist{
+    my($line) = shift;
+
+    foreach my $test (@blisttests){
+        my($re,$key) = @{$test};
+        return $key if ($line =~ /$re/);
+    }
+    return undef;
+}
+-------
+#*
+#* subroutine to check an address against an Internet-wide black list
+#*
+
+sub checkaddr{
+    my($ip,$domain) = @_;
+
+    return undef unless (defined $ip);
+
+    my $lookupip = join('.',reverse split(/\./,$ip));
+    
+    if (gethostbyname($lookupip.$domain)){
+        return $ip;
+    }
+    else {
+        return undef;
+    }
+}
+-------
+#*
+#* retrieve WHOIS information about a particular IP address
+#*
+sub getwhois{
+    my($ip) = shift;
+    my($info);
+
+    $cn = new Net::Telnet(Host => $whoishost,
+                          Port => 'whois',
+                          Errmode => "return",
+                          Timeout => 30)
+      or die "Unable to set up $whoishost connection:$!\n";
+
+    unless ($cn->print($ip."\n")){
+        $cn->close;
+        die "Unable to send $ip to $whoishost: ".$cn->errmsg."\n";
+    }
+
+    while ($ret = $cn->get){
+        $info .=$ret;
+    };
+
+    $cn->close;
+
+    return $info;
+}
+-------
+#*
+#* examine a piece of spam/UCE and tell us information about it
+#* NOTE: this requires several subroutines from above
+#*
+
+use Mail::Header;
+use Socket; 
+use BerkeleyDB;
+use Net::Telnet;
+
+$header = new Mail::Header \*STDIN;
+
+$header ->unfold('Received');
+@received = $header->get('Received');
+
+$rbldomain  = ".rbl.maps.vix.com";
+$orbsdomain = ".relays.orbs.org";
+$duldomain  = ".dul.maps.vix.com";
+$blacklist  = "/etc/mail/blacklist.db";
+$whoishost  = "whois.geektools.com";
+
+&loadblist;
+
+for (reverse @received){
+    chomp;
+
+
+    parseline($_);
+    if (!defined $ehelo and !defined $validname and !defined $validip){
+       print "$_\n";
+    }
+    else {
+     $flags  = (&checkaddr($validip,$rbldomain)  ? "R" : ""); # in RBL?
+     $flags .= (&checkaddr($validip,$orbsdomain) ? "O" : ""); # in ORBS?
+     $flags .= (&checkaddr($validip,$duldomain)  ? "D" : ""); # in DUL?
+     $flags .= (&checkblist($_)              ? "B" : ""); # in our list?
+     $flags .= (&checkrev($validip,$validname) ? "L" : ""); # rev-lookup?
+      push(@iplist,$validip);
+	
+      write;
+    }
+}
+
+for (@iplist){
+    print "\nWHOIS info for $_:\n";
+    print &getwhois($_);
+}
+
+format STDOUT =
+@<<<<<<<<<<<<<<<<<<<<<  @<<<<<<<<<<<<<<<<<<<<<  @<<<<<<<<<<<<<<< @<<<<
+$ehelo,$validname,$validip,$flags
+.
+-------
+#*
+#* suss - attempts to determine problem machine by looking at message itself
+#*
+
+use Mail::Internet;
+$localdomain = ".example.com";
+
+# read in our host file
+open(HOSTS,"/etc/hosts") or die "Can't open host file\n";
+while(defined($_ = <HOSTS>)){
+    next if /^#/;        # skip comments
+    next if /^$/;        # skip blank lines
+    next if /monitor/i;  # an example of a misleading host 
+
+    $machine = lc((split)[1]);  # extract the first host name & downcase
+    $machine =~ s/\Q$localdomain\E$//oi; # remove our domain name
+    $machines{$machine}++ unless $machines{$machine};
+}
+
+# parse the message
+$message = new Mail::Internet \*STDIN;
+$message->head->unfold();
+
+# check in the subject line
+my $subject = $message->head->get('Subject');
+$subject  =~ s/[.,;?]//g;
+for (split(/\s+/,$subject)) {
+    if (exists $machines{lc $_}) {
+	print "subject: $_\n";
+	$found++;
+    }
+}
+exit if $found;
+
+# check in the body of the message
+chomp(my @body = @{$message->body()});
+my $body = join(" ",@body);
+$body =~ s/[^\w\s]/ /g;              # remove punctuation 
+@body{split(' ', lc $body)} = ();    # uniq'ify the body
+for (keys %body) {
+    if (exists $machines{lc $_}) {
+	print "body: $_\n";
+	$found++;
+    }
+}
+exit if $found;
+
+# last resort: check the last Received: line
+$received = (reverse $message->head->get('Received'))[0]; 
+$received =~ s/\Q$localdomain\E//g;
+for (split(/\s+/,$received)) {
+    if (exists $machines{lc $_}) {
+	print "received: $_\n";
+    }
+}
+-------
+#*
+#* a suss-like program that checks against a printer database
+#*
+
+use Mail::Internet;
+use DB_File;
+
+$localdomain = ".example.com";
+
+# printdb is a Berkeley DB file with a host for a key and a 
+# printer for a value
+$printdb     = "printdb"; 
+
+# parse the message
+$message = new Mail::Internet \*STDIN;
+$message->head->unfold();
+
+# check in the subject line
+my $subject = $message->head->get('Subject');
+if ($subject =~ /print(er|ing)?/i){
+    # find sending machine (assumes Sendmail's header format)
+    $received = (reverse $message->head->get('Received'))[0]; 
+    ($host) = 
+      $received =~ /^from \S+ \((?:\S+@)?(\S+)\Q$localdomain\E \[/;
+}
+
+tie %printdb, "DB_File",$printdb  or die "Can't tie $printdb database:$!\n";
+
+print "Problem on $host may be with the printer called " . 
+  $printdb{$host} . ".\n";
+
+untie %printdb;

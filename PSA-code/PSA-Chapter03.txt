@@ -1,0 +1,761 @@
+Example code from Perl for System Administration by David N. Blank-Edelman
+O'Reilly and Associates, 1st Edition, ISBN 1-56592-609-9
+
+Chapter Three
+=============
+#*
+#* parsing the UNIX password file "by hand"
+#*
+
+$passwd = "/etc/passwd";
+open(PW,$passwd) or die "Can't open $passwd:$!\n";
+while (<PW>){
+    ($name,$passwd,$uid,$gid,$gcos,$dir,$shell) = split(/:/);
+    # <your code here>
+}
+close(PW);
+-------
+#*
+#* parsing the UNIX password file using the system libraries
+#*
+while(($name,$passwd,$uid,$gid,$gcos,$dir,$shell) = getpwent()){
+       # <your code here>
+}
+endpwent();           
+-------
+#*
+#* finding the next available UID
+#*
+
+$passwd = "/etc/passwd";
+open(PW,$passwd) or die "Can't open $passwd:$!\n";
+while (<PW>){
+    @fields = split(/:/);
+    $highestuid = ($highestuid < $fields[2]) ? $fields[2] : $highestuid;
+}
+close(PW);
+print "The next available UID is " . ++$highestuid . "\n";
+-------
+#*
+#* check to make sure every user owns their own home directory and
+#* that the directory is not world writeable
+#*
+
+use User::pwent;
+use File::stat;
+
+# note: this code will beat heavily upon any machine using automounted homedirs
+while($pwent = getpwent()){
+    # make sure we stat the actual dir,even through layers of symlink
+    # indirection
+    $dirinfo = stat($pwent->dir."/."); 
+    unless (defined $dirinfo){
+        warn "Unable to stat ".$pwent->dir.": $!\n";
+        next;
+    }
+    warn $pwent->name."'s homedir is not owned by the correct uid (".
+      $dirinfo->uid." instead ".$pwent->uid.")!\n"
+        if ($dirinfo->uid != $pwent->uid);
+
+    # world writable is fine if dir is set "sticky" (i.e. 01000), 
+    # see the manual page for chmod for more information
+    warn $pwent->name."'s homedir is world-writable!\n"
+      if ($dirinfo->mode & 022 and (!$stat->mode & 01000));
+}
+
+endpwent();
+-------
+#*
+#* check to make sure all users have "standard" shells
+#*
+
+use User::pwent;
+
+$shells = "/etc/shells";
+open (SHELLS,$shells) or die "Unable to open $shells:$!\n";
+while(<SHELLS>){
+    chomp;
+    $okshell{$_}++;
+}
+close(SHELLS);
+
+while($pwent = getpwent()){
+   warn $pwent->name." has a bad shell (".$pwent->shell.")!\n"
+     unless (exists $okshell{$pwent->shell});
+}
+endpwent();
+-------
+#*
+#* dump information about all local users on an NT/2000 machine
+#*
+
+use Win32::AdminMisc
+
+# retrieve all of the local users
+Win32::AdminMisc::GetUsers('','',\@users) or 
+   die "Unable to get users: $!\n";
+
+# get their attributes and print them
+foreach $user (@users){
+  Win32::AdminMisc::UserGetMiscAttributes('',$user,\%attribs) or 
+    warn "Unable to get attrib: $!\n";
+  print join(":",$user,
+                 '*',
+                 $attribs{USER_USER_ID},
+                 $attribs{USER_PRIMARY_GROUP_ID},
+                 '',
+                 $attribs{USER_COMMENT},
+                 $attribs{USER_FULL_NAME},
+                 $attribs{USER_HOME_DIR_DRIVE}."\\".
+                 $attribs{USER_HOME_DIR},
+                 ''),"\n";
+}
+-------
+#*
+#* show the RID for a particular user on an NT/2000 machine
+#*
+
+use Win32::AdminMisc;
+
+Win32::AdminMisc::UserGetMiscAttributes('',$user,\%attribs);
+print $attribs{USER_USER_ID},"\n";
+-------
+#*
+#* change the owner of a directory (and its contents) on NT/2000
+#*
+
+use Win32::Perms;
+    
+$acl  = new Win32::Perms();
+$acl->Owner($NewAccountName);
+$result = $acl->SetRecurse($dir);
+$acl->Close();
+-------
+#*
+#* retrieve the user rights for the user 'Guest' on NT/2000
+#*
+use Win32::Lanman;
+
+unless(Win32::Lanman::LsaLookupNames($server, ['Guest'], \@info)
+       die "Unable to lookup SID: ".Win32::Lanman::GetLastError()."\n";
+
+unless (Win32::Lanman::LsaEnumerateAccountRights($server, 
+                                                 ${$info[0]}{sid},
+                                                 \@rights);
+	die "Unable to query rights: ".Win32::Lanman::GetLastError()."\n"; 
+-------
+#*
+#* add the user right that enables a user to shut down a machine to 'Guest'
+#*
+use Win32::Lanman;
+
+unless (Win32::Lanman::LsaLookupNames($server, ['Guest'], \@info))
+	die "Unable to lookup SID: ".Win32::Lanman::GetLastError()."\n";
+
+unless (Win32::Lanman::LsaAddAccountRights($server, ${$info[0]}{sid}, 
+					   [&SE_SHUTDOWN_NAME]))
+	die "Unable to change rights: ".Win32::Lanman::GetLastError()."\n"
+-------
+#*
+#* a subroutine that queries a user for account info and then returns
+#* a data structure with this information in it (used as part of our example
+#* account system)
+#*
+sub CollectInformation{
+    # list of fields init'd here for demo purposes, this should 
+    # really be kept in a central configuration file
+    my @fields = qw{login fullname id type password};
+    my %record;
+
+    foreach my $field (@fields){
+        print "Please enter $field: ";
+        chomp($record{$field} = <STDIN>);
+    }
+    $record{status}="to_be_created";
+    return \%record; 
+}
+-------
+#*
+#* subroutine to append account information to a queue file in XML format
+#*
+
+sub AppendAccountXML {
+    # receive the full path to the file
+    my $filename = shift;
+    # receive a reference to an anonymous record hash  
+    my $record = shift;    
+
+    # XML::Writer uses IO::File objects for output control
+    use IO::File;
+
+    # append to that file
+    $fh = new IO::File(">>$filename") or 
+      die "Unable to append to file:$!\n";
+
+    # initialize the XML::Writer module and tell it to write to 
+    # filehandle $fh
+    use XML::Writer;
+    my $w = new XML::Writer(OUTPUT => $fh);
+
+    # write the opening tag for each <account> record
+    $w->startTag("account");
+
+    # write all of the <account> data start/end sub-tags & contents
+    foreach my $field (keys %{$record}){
+	print $fh "\n\t";
+	$w->startTag($field);
+	$w->characters($$record{$field});
+	$w->endTag;
+    }
+    print $fh "\n";
+
+    # write the closing tag for each <account> record
+    $w->endTag;
+    $w->end;
+    $fh->close();
+}
+-------
+#*
+#* parsing our queue file using XML::Parser
+#*
+
+use XML::Parser;
+use Data::Dumper; # used for debugging output, not needed for XML parse
+$p = new XML::Parser(ErrorContext => 3, 
+		     Style        => 'Stream',
+		     Pkg          => 'Account::Parse');
+
+# handle multiple account records in a single XML queue file
+open(FILE,$addqueue) or die "Unable to open $addqueue:$!\n";
+
+# this clever read idiom courtesy of Jeff Pinyan
+read(FILE, $queuecontents, -s FILE);
+$p->parse("<queue>".$queuecontents."</queue>");
+
+package Account::Parse;
+
+sub StartTag {
+    undef %record if ($_[1] eq "account");
+}
+
+sub Text {
+    my $ce = $_[0]->current_element();
+    $record{$ce}=$_ unless ($ce eq "account");
+}
+
+sub EndTag {
+    print Data::Dumper->Dump([\%record],["account"]) 
+      if ($_[1] eq "account");    
+    # here's where we'd actually do something, instead of just
+    # printing the record
+}
+-------
+#*
+#* writing XML using XML::Simple
+#*
+
+use XML::Simple;
+
+# rootname sets the root element's name, we could also use xmldecl to
+# add an XML declaration
+print XMLout($queue, rootname =>"queue"); 
+-------
+#*
+#* reading and printing out a queue file using XML::Simple
+#*
+
+use XML::Simple;
+use Data::Dumper;  # just needed to show contents of our data structures
+
+$queuefile = "addqueue.xml";
+open(FILE,$queuefile) or die "Unable to open $queuefile:$!\n";
+read (FILE, $queuecontents, -s FILE);
+
+$queue = XMLin("<queue>".$queuecontents."</queue>");
+
+print Data::Dumper->Dump([$queue],["queue"]);
+-------
+#*
+#* subroutine to transform an easy to work with data structure from an 
+#* XML::Simple read into a the data structure necessary to write it back
+#* out again using XML::Simple (see text for more details).
+#*
+
+sub TransformForWrite{
+    my $queueref = shift;
+    my $toplevel = scalar each %$queueref;
+
+    foreach my $user (keys %{$queueref->{$toplevel}}){
+      my %innerhash = 
+	map {$_,[$queueref->{$toplevel}{$user}{$_}] } 
+	  keys %{$queueref->{$toplevel}{$user}};
+      $innerhash{'login'} = [$user];
+      push @outputarray, \%innerhash;
+    }
+
+    $outputref = { $toplevel => \@outputarray};
+    return $outputref;
+}
+
+# sample usage
+$queue = XMLin("<queue>".$queuecontents."</queue>",keyattr => ["login"]);
+# <manipulate the data>
+print OUTPUTFILE XMLout(TransformForWrite($queue),rootname => "queue");
+-------
+#*
+#* wrapping an XML parse in eval to protect against bad XML code
+#*
+eval {$p->parse("<queue>".$queuecontents."</queue>")};
+if ($@) { 
+ # <do something graceful to handle the error before quitting>
+};
+-------
+#*
+#* basic UNIX account creation routine
+#*
+
+# these variables should really be set in a central configuration file
+$useraddex    = "/usr/sbin/useradd";  # location of useradd executable
+$passwdex     = "/bin/passwd";        # location of passwd executable
+$homeUNIXdirs = "/home";              # home directory root dir
+$skeldir      = "/home/skel";         # prototypical home directory
+$defshell     = "/bin/zsh";           # default shell
+
+sub CreateUNIXAccount{
+    
+    my ($account,$record) = @_;
+
+    ### construct the command line, using:
+    # -c = Comment field
+    # -d = home dir
+    # -g = group (assume same as user type)
+    # -m = create home dir
+    # -k = and copy in files from this skeleton dir
+    # (could also use -G group, group, group to add to auxiliary groups)
+    my @cmd = ($useraddex, 
+	       "-c", $record->{"fullname"},
+	       "-d", "$homeUNIXdirs/$account",
+	       "-g", $record->{"type"},
+	       "-m",
+	       "-k", $skeldir,
+	       "-s", $defshell,
+	       $account);
+    
+    print STDERR "Creating account...";
+    my $result = 0xff & system @cmd;
+    # the return code is 0 for success, non-0 for failure, so we invert
+    if ($result){
+        print STDERR "failed.\n";
+        return "$useraddex failed";        
+    }
+    else {
+        print STDERR "succeeded.\n";        
+    }
+
+    print STDERR "Changing passwd...";
+    unless ($result = &InitUNIXPasswd($account,$record->{"password"})){
+        print STDERR "succeeded.\n";
+        return "";
+    }
+    else {
+        print STDERR "failed.\n";
+        return $result;
+    }
+}
+-------
+#*
+#* basic UNIX account deletion routine
+#*
+
+# these variables should really be set in a central configuration file
+$userdelex = "/usr/sbin/userdel";  # location of userdel executable
+
+sub DeleteUNIXAccount{
+    my ($account,$record) = @_;
+
+    ### construct the command line, using:
+    # -r = remove the account's home directory for us
+    my @cmd = ($userdelex, "-r", $account);
+    
+    print STDERR "Deleting account...";
+    my $result = 0xffff & system @cmd;
+    # the return code is 0 for success, non-0 for failure, so we invert
+    if (!$result){
+        print STDERR "succeeded.\n";
+        return "";
+    }
+    else {
+        print STDERR "failed.\n";
+	     return "$userdelex failed";
+    }
+}
+-------
+#*
+#* routine to change a UNIX password 
+#*
+use Expect;
+
+sub InitUNIXPasswd {
+    my ($account,$passwd) = @_;
+
+    # return a process object
+    my $pobj = Expect->spawn($passwdex, $account);
+    die "Unable to spawn $passwdex:$!\n" unless (defined $pobj);
+
+    # do not log to stdout (i.e. be silent)
+    $pobj->log_stdout(0);
+
+    # wait for password & password re-enter prompts, 
+    # answering appropriately
+    $pobj->expect(10,"New password: ");
+    # Linux sometimes prompts before it is ready for input, so we pause
+    sleep 1;
+    print $pobj "$passwd\r";
+    $pobj->expect(10, "Re-enter new password: ");
+    print $pobj "$passwd\r";
+
+    # did it work?
+    $result = (defined ($pobj->expect(10, "successfully changed")) ? 
+  	                                  "" : "password change failed");
+
+    # close the process object, waiting up to 15 secs for 
+    # the process to exit
+    $pobj->soft_close();
+    
+    return $result;
+}
+-------
+#*
+#* basic local user account creation routine for NT/2000
+#*
+use Win32::Lanman;   # for account creation
+use Win32::Perms;    # to set the permissions on the home directory
+
+$homeNTdirs = "\\\\homeserver\\home";         # home directory root dir
+
+
+sub CreateNTAccount{
+    
+    my ($account,$record) = @_;
+
+    # create this account on the local machine 
+    # (i.e. empty first parameter)
+    $result = Win32::Lanman::NetUserAdd("", 
+			               {'name'      => $account,
+					'password'  => $record->{password},
+					'home_dir'  => "$homeNTdirs\\$account",
+					'full_name' => $record->{fullname}});
+    return Win32::Lanman::GetLastError() unless ($result);
+
+    # add to appropriate LOCAL group (first get the SID of the account)
+    # we assume the group name is the same as the account type
+    die "SID lookup error: ".Win32::Lanman::GetLastError()."\n" unless
+      (Win32::Lanman::LsaLookupNames("", [$account], \@info));
+    $result = Win32::Lanman::NetLocalGroupAddMember("",$record->{type}, 
+						       ${$info[0]}{sid});
+    return Win32::Lanman::GetLastError() unless ($result);
+
+    # create home directory
+    mkdir "$homeNTdirs\\$account",0777 or
+      return "Unable to make homedir:$!";
+
+    # now set the ACL and owner of the directory
+    $acl = new Win32::Perms("$homeNTdirs\\$account");
+    $acl->Owner($account);
+
+    # we give the user full control of the directory and all of the 
+    # files that will be created within it (hence the two separate calls)
+    $acl->Allow($account, FULL, DIRECTORY|CONTAINER_INHERIT_ACE);
+    $acl->Allow($account, FULL, 
+                          FILE|OBJECT_INHERIT_ACE|INHERIT_ONLY_ACE);
+    $result = $acl->Set();
+    $acl->Close();
+
+    return($result ? "" : $result);
+}
+-------
+#*
+#* basic account deletion routine for NT/2000
+#*
+
+use Win32::Lanman;   # for account deletion
+use File::Path;      # for recursive directory deletion
+
+sub DeleteNTAccount{
+    
+    my($account,$record) = @_;
+
+    # remove user from LOCAL groups only. If we wanted to also 
+    # remove from global groups we could remove the word "Local" from 
+    # the two Win32::Lanman::NetUser* calls *e.g. NetUserGetGroups)
+    die "SID lookup error: ".Win32::Lanman::GetLastError()."\n" unless
+      (Win32::Lanman::LsaLookupNames("", [$account], \@info));
+    Win32::Lanman::NetUserGetLocalGroups($server, $account,'', \@groups);
+    foreach $group (@groups){
+        print "Removing user from local group ".$group->{name}."...";
+        print(Win32::Lanman::NetLocalGroupDelMember("", 
+						    $group->{name},
+						    ${$info[0]}{sid}) ?     
+                                                  "succeeded\n" : "FAILED\n");
+    }
+
+    # delete this account on the local machine 
+    # (i.e. empty first parameter)
+    $result = Win32::Lanman::NetUserDel("", $account);
+
+    return Win32::Lanman::GetLastError() if ($result);
+
+    # delete the home directory and its contents
+    $result = rmtree("$homeNTdirs\\$account",0,1);
+	
+    # rmtree returns the number of items deleted, 
+    # so if we deleted more than 0,it is likely that we succeeded 
+    return $result;
+}
+-------
+#*
+#* initialization subroutine for our basic account system
+#*
+
+sub InitAccount{
+
+    use XML::Writer;
+
+    $record   = { fields => [login,fullname,id,type,password]};
+    $addqueue   = "addqueue";  # name of add account queue file
+    $delqueue   = "delqueue";  # name of del account queue file
+    $maindata   = "accountdb"; # name of main account database file
+
+    if ($^O eq "MSWin32"){
+        require Win32::Lanman;
+        require Win32::Perms;
+        require File::Path;
+
+        # location of account files
+        $accountdir = "\\\\server\\accountsystem\\";
+        # mail lists, example follows 
+        $maillists  = "$accountdir\\maillists\\";    
+        # home directory root
+        $homeNTdirs = "\\\\homeserver\\home";
+        # name of account add subroutine
+        $accountadd = "CreateNTAccount";
+        # name of account del subroutine             
+        $accountdel = "DeleteNTAccount";             
+    }
+    else {
+        require Expect;
+        # location of account files
+        $accountdir   = "/usr/accountsystem/";
+        # mail lists, example follows   
+        $maillists    = "$accountdir/maillists/";
+        # location of useradd executable
+        $useraddex    = "/usr/sbin/useradd";
+        # location of userdel executable
+        $userdelex    = "/usr/sbin/userdel";     
+        # location of passwd executable
+        $passwdex     = "/bin/passwd";
+        # home directory root dir
+        $homeUNIXdirs = "/home";
+        # prototypical home directory
+        $skeldir      = "/home/skel";            
+        # default shell
+        $defshell     = "/bin/zsh";
+        # name of account add subroutine
+        $accountadd = "CreateUNIXAccount";
+        # name of account del subroutine
+        $accountdel = "DeleteUNIXAccount";       
+    }   
+}
+-------
+#*
+#* program to process the account queue
+#*
+
+# this is just all of the subroutines from above placed into a file called
+# "Account.pm" in our module load path (e.g. in the current directory)
+use Account; 
+use XML::Simple;
+
+&InitAccount;     # read in our low level routines
+&ReadAddQueue;    # read and parse the add account queue
+&ProcessAddQueue; # attempt to create all accounts in the queue
+&DisposeAddQueue; # write account record either to main database or back
+                  # to queue if there is a problem
+
+# read in the add account queue to the $queue data structure
+sub ReadAddQueue{
+    open(ADD,$accountdir.$addqueue) or 
+      die "Unable to open ".$accountdir.$addqueue.":$!\n";
+    read (ADD, $queuecontents, -s ADD);
+    close(ADD);
+    $queue = XMLin("<queue>".$queuecontents."</queue>",
+                   keyattr => ["login"]);
+}
+
+# iterate through the queue structure, attempting to create an account
+# for each request (i.e. each key) in the structure
+sub ProcessAddQueue{
+    foreach my $login (keys %{$queue->{account}}){
+        $result = &$accountadd($login,$queue->{account}->{$login});
+        if (!$result){
+            $queue->{account}->{$login}{status} = "created";
+        }
+        else {
+            $queue->{account}->{$login}{status} = "error:$result";
+        }
+    }
+}
+
+# now iterate through the queue structure again. For each account with 
+# a status of "created", append to main database. All others get written
+# back to the add queue file, overwriting it.
+sub DisposeAddQueue{
+    foreach my $login (keys %{$queue->{account}}){
+        if ($queue->{account}->{$login}{status} eq "created"){
+            $queue->{account}->{$login}{login} = $login;
+            $queue->{account}->{$login}{creation_date} = time;
+            &AppendAccountXML($accountdir.$maindata,
+                              $queue->{account}->{$login});
+            delete $queue->{account}->{$login};
+            next;
+        }
+    }
+
+    # all we have left in $queue at this point are the accounts that 
+    # could not be created
+
+    # overwrite the queue file
+    open(ADD,">".$accountdir.$addqueue) or 
+      die "Unable to open ".$accountdir.$addqueue.":$!\n";
+    # if there are accounts which could not be created write them
+    if (scalar keys %{$queue->{account}}){ 
+        print ADD XMLout(&TransformForWrite($queue),rootname => undef);
+    } 
+    close(ADD);
+}	    
+-------
+#*
+#* program to process the delete queue
+#*
+
+use Account;      # see description above
+use XML::Simple;
+
+&InitAccount;     # read in our low level routines
+&ReadDelQueue;    # read and parse the add account queue
+&ProcessDelQueue; # attempt to delete all accounts in the queue
+&DisposeDelQueue; # write account record either to main database or back
+                  # to queue if there is a problem
+
+# read in the del user queue to the $queue data structure
+sub ReadDelQueue{
+    open(DEL,$accountdir.$delqueue) or 
+      die "Unable to open ".$accountdir.$delqueue.":$!\n";
+    read (DEL, $queuecontents, -s DEL);
+    close(DEL);
+    $queue = XMLin("<queue>".$queuecontents."</queue>",
+                   keyattr => ["login"]);
+}
+
+# iterate through the queue structure, attempting to delete an account for
+# each request (i.e. each key) in the structure
+sub ProcessDelQueue{
+    foreach my $login (keys %{$queue->{account}}){
+        $result = &$accountdel($login,$queue->{account}->{$login});
+        if (!$result){
+            $queue->{account}->{$login}{status} = "deleted";
+        }
+        else {
+            $queue->{account}->{$login}{status} = "error:$result";
+        }
+    }
+}
+
+# read in the main database and then iterate through the queue
+# structure again. For each account with a status of "deleted", change
+# the main database information. Then write the main database out again.
+# All which could not be deleted are written back to the del queue
+# file, overwriting it.
+sub DisposeDelQueue{
+    &ReadMainDatabase;
+
+    foreach my $login (keys %{$queue->{account}}){
+        if ($queue->{account}->{$login}{status} eq "deleted"){
+            unless (exists $maindb->{account}->{$login}){
+                warn "Could not find $login in $maindata\n";
+                next;
+            }
+            $maindb->{account}->{$login}{status} = "deleted";
+            $maindb->{account}->{$login}{deletion_date} = time;
+            delete $queue->{account}->{$login};
+            next;
+       }
+    }
+
+    &WriteMainDatabase;
+
+    # all we have left in $queue at this point are the accounts that
+    # could not be deleted
+    open(DEL,">".$accountdir.$delqueue) or 
+      die "Unable to open ".$accountdir.$addqueue.":$!\n";
+    # if there are accounts which could not be created, else truncate
+    if (scalar keys %{$queue->{account}}){ 
+        print DEL XMLout(&TransformForWrite($queue),rootname => undef);
+    } 
+    close(DEL);
+}	    
+
+sub ReadMainDatabase{
+    open(MAIN,$accountdir.$maindata) or 
+      die "Unable to open ".$accountdir.$maindata.":$!\n";
+    read (MAIN, $dbcontents, -s MAIN);
+    close(MAIN);
+    $maindb = XMLin("<maindb>".$dbcontents."</maindb>",
+                    keyattr => ["login"]);
+}
+
+sub WriteMainDatabase{
+    # note: it would be *much, much safer* to write to a temp file 
+    # first and then swap it in if the data was written successfully
+    open(MAIN,">".$accountdir.$maindata) or 
+      die "Unable to open ".$accountdir.$maindata.":$!\n";
+    print MAIN XMLout(&TransformForWrite($maindb),rootname => undef);
+    close(MAIN);
+}
+-------
+#*
+#* generate mailing list include files from the main account databae
+#*
+use Account;         # just to get the file locations
+use XML::Simple;
+
+&InitAccount;
+&ReadMainDatabase;
+&WriteFiles;
+
+# read the main database into a hash of lists of hashes
+sub ReadMainDatabase{
+    open(MAIN,$accountdir.$maindata) or 
+      die "Unable to open ".$accountdir.$maindata.":$!\n";
+    read (MAIN, $dbcontents, -s MAIN);
+    close(MAIN);
+    $maindb = XMLin("<maindb>".$dbcontents."</maindb>",keyattr => [""]);
+}
+
+# iterate through the lists, compile the list of accounts of a certain 
+# type and store them in a hash of lists. Then write out the contents of 
+# each key to a different file.
+sub WriteFiles {
+    foreach my $account (@{$maindb->{account}}){
+        next if $account->{status} eq "deleted";
+        push(@{$types{$account->{type}}},$account->{login});
+    }
+    
+    foreach $type (keys %types){
+        open(OUT,">".$maillists.$type) or 
+          die "Unable to write to ".$accountdir.$maillists.$type.":$!\n";
+        print OUT join("\n",sort @{$types{$type}})."\n";
+        close(OUT);
+    }
+}
+

@@ -1,0 +1,458 @@
+Example code from Perl for System Administration by David N. Blank-Edelman
+O'Reilly and Associates, 1st Edition, ISBN 1-56592-609-9
+
+Chapter Two
+===========
+
+#*
+#* construct an OS independent path to this file
+#*
+
+use File::Spec;
+$path = File::Spec->catfile("home","cindy","docs","resume.doc");
+-------
+#*
+#* look in the current directory for core files
+#*
+
+opendir(DIR,".") or die "Can't open the current directory: $!\n";
+# read file/directory names in that directory into @names
+@names = readdir(DIR) or die "Unable to read current dir:$!\n";
+closedir(DIR);
+foreach $name (@names) {
+    next if ($name eq "."); # skip the current directory entry
+    next if ($name eq ".."); # skip the parent directory entry
+    if (-d $name){ # is this a directory?
+        print "found a directory: $name\n";
+        next; # can skip to the next name in the for loop
+    }
+    if ($name eq "core") { # is this a file named "core"?
+        print "found one!\n";
+    }
+}
+-------
+#*
+#* scans a filesystem "by hand" for core files with optional deletion
+#*
+
+#!/usr/bin/perl -s
+# note the use of -s for switch processing. Under NT/2000, you will need
+# call this script explicitly with -s (i.e. perl -s script) if you do not
+# have perl file associations in place.
+#
+# -s is also considered 'retro', many programmers preferring to load
+# a separate module (from the Getopt:: family) for switch parsing.
+
+use Cwd; # module for finding the current working directory
+
+# This subroutine takes the name of a directory and recursively scans
+# down the filesystem from that point looking for files named "core"
+
+sub ScanDirectory{
+    my ($workdir) = shift;
+    my ($startdir) = &cwd; # keep track of where we began
+
+    chdir($workdir) or die "Unable to enter dir $workdir:$!\n";
+    opendir(DIR, ".") or die "Unable to open $workdir:$!\n";
+    my @names = readdir(DIR) or die "Unable to read $workdir:$!\n";
+    closedir(DIR);
+
+    foreach my $name (@names){
+        next if ($name eq ".");
+        next if ($name eq "..");
+        if (-d $name){ # is this a directory?
+            &ScanDirectory($name);
+            next;
+        }
+        if ($name eq "core") { # is this a file named "core"?
+            # if -r specified on command line, actually delete the file
+            if (defined $r){
+                unlink($name) or die "Unable to delete $name:$!\n";
+            }
+            else {
+                print "found one in $workdir!\n";
+            }
+        }
+    }
+    chdir($startdir) or die "Unable to change to dir $startdir:$!\n";
+}
+&ScanDirectory(".");
+
+-------
+#*
+#* search a filesystem "by hand" for damaged files
+#*
+
+use Cwd; # module for finding the current working directory
+$|=1;    # turn off I/O buffering
+
+sub ScanDirectory {
+    my ($workdir) = shift;
+    my($startdir) = &cwd; # keep track of where we began
+
+    chdir($workdir) or die "Unable to enter dir $workdir:$!\n";
+    opendir(DIR, ".") or die "Unable to open $workdir:$!\n";
+    my @names = readdir(DIR);
+    closedir(DIR);
+
+    foreach my $name (@names){
+	next if ($name eq ".");
+	next if ($name eq "..");
+	if (-d $name){ # is this a directory?
+	    &ScanDirectory($name);
+	    next;
+	}
+	unless (&CheckFile($name)){
+	    print &cwd."/".$name."\n"; # print the bad filename
+	}
+    }
+
+    chdir($startdir) or die "Unable to change to dir $startdir:$!\n";
+}
+
+sub CheckFile{
+    my($name) = shift;
+
+    print STDERR "Scanning ". &cwd."/".$name."\n";
+
+    # attempt to read the directory entry for this file
+    my @stat = stat($name);
+    if (!$stat[4] && !$stat[5] && !$stat[6] && !$stat[7] && !$stat[8]){
+	return 0;
+    }
+
+    # attempt to open this file
+    unless (open(T,"$name")){
+	return 0;
+    }
+
+    # read the file one byte at a time
+    for (my $i=0;$i< $stat[7];$i++){
+	my $r=sysread(T,$i,1);
+	if ($r !=1) {
+	    close(T);
+	    return 0;
+	}
+    }
+    close(T);
+    return 1;
+}
+&ScanDirectory(".");
+-------
+#*
+#* search a filesystem for core files using modified find2perl code
+#*
+
+require "find.pl";
+# Traverse desired filesystems
+&find('.');
+exit;
+-------
+#*
+#* the final improved &wanted subroutine
+#*
+
+sub wanted {
+    /^core$/ && -s $name && print("$name\n") && defined $r && unlink($name);
+}
+-------
+#*
+#* find all of the text files in a MacOS filesystem
+#*
+
+use File::Find;
+
+&File::Find::find(\&wanted,"Macintosh HD:");
+
+sub wanted{
+    -f $_ && MacPerl::GetFileInfo($_) eq "TEXT" && print "$Find::File::name\n";
+}
+-------
+#*
+#* find all of the hidden files in a FAT/VFAT/FAT32/NTFS filesystem
+#*
+
+use File::Find;
+use Win32::File;
+
+&File::Find::find(\&wanted,"\\");
+
+sub wanted{
+    -f $_ &&
+      # attr will be populated by Win32::File::GetAttributes function
+      (Win32::File::GetAttributes($_,$attr)) &&
+	($attr & HIDDEN) &&
+	  print "$File::Find::name\n";
+}
+
+-------
+#*
+#* find all of the files with FULL ACCESS for Everyone in an NTFS filesystem
+#*
+
+use File::Find;
+use Win32::FileSecurity;
+#determine the DACL mask for Full Access
+$fullmask = Win32::FileSecurity::MakeMask(FULL);
+&find(\&wanted,"\\");
+
+sub wanted {
+    # Win32::FileSecurity::Get does not like the paging file, skip it
+    next if ($_ eq "pagefile.sys");
+    (-f $_) &&
+      Win32::FileSecurity::Get($_, \%users) &&
+	  (defined $users{"Everyone"}) &&
+	    ($users{"Everyone"} == $fullmask) &&
+	      print "$File::Find::name\n";
+}
+-------
+#*
+#* find all of the long files and the longest file
+#*
+
+require "find.pl";
+# Traverse desired filesystems
+&find('.');
+print "max:$max\n";
+exit;
+
+sub wanted {
+    return unless -f $_;
+    if (length($_) > $maxlength){
+	$max = $name;
+	$maxlength = length($_);
+    }
+    if (length($name) > 200) { print $name,"\n";}
+}
+-------
+#*
+#* needspace - help user find files that can be deleted
+#*
+
+use File::Find;
+use File::Basename;
+# array of fname extensions and the extensions they can be derived from
+%derivations = (".dvi" => ".tex",
+		".aux" => ".tex",
+		".toc" => ".tex",
+		".o" => ".c",
+	       );
+
+$homedir=(getpwuid($<))[7]; # find the user's home directory
+chdir($homedir) or
+  die "Unable to change to your homedir $homedir:$!\n";
+$|=1; # print to STDOUT in an unbuffered way
+
+print "Scanning";
+find(\&wanted, "."); # chew through dirs, &wanted does the work
+print "done.\n";
+
+foreach my $path (keys %core){
+    print "Found a core file taking up ".&BytesToMeg($core{$path}).
+      "MB in ".&File::Basename::dirname($path).".\n";
+}
+
+if (keys %emacs){
+    print "The following are most likely emacs backup files:\n";
+    foreach my $path (keys %emacs){
+	$tempsize += $emacs{$path};
+	$path =~ s/^$homedir/~/; # change the path for prettier output
+	print "$path ($emacs{$path} bytes)\n";
+    }
+    print "\nThese files take up ".&BytesToMeg($tempsize)."MB total.\n";
+    $tempsize=0;
+}
+
+if (keys %tex){
+    print "The following are most likely files that can be recreated by running La/TeX:\n";
+    foreach my $path (keys %tex){
+	$tempsize += $tex{$path};
+	$path =~ s/^$homedir/~/; # change the path for prettier output
+	print "$path ($tex{$path} bytes)\n";
+    }
+    print "\nThese files take up ".&BytesToMeg($tempsize)."MB total.\n";
+    $tempsize=0;
+}
+
+if (keys %doto){
+    print "The following are most likely files that can be recreated by recompiling source:\n";
+    foreach my $path (keys %doto){
+	$tempsize += $doto{$path};
+	$path =~ s/^$homedir/~/; # change the path for prettier output
+	print "$path ($doto{$path} bytes)\n";
+    }
+    print "\nThese files take up ".&BytesToMeg($tempsize)."MB total.\n";
+    $tempsize=0;
+}
+
+sub wanted {
+    # print a dot for every dir so the user knows we are doing something
+    print "." if (-d $_);
+
+    # we are only checking files
+    return unless (-f $_);
+
+    # check for core files, store them in the %core table, then return
+    $_ eq "core" && ($core{$File::Find::name} = (stat(_))[7]) && return;
+
+    # check for emacs backup and autosave files
+    (/^#.*#$/ || /~$/) &&
+     ($emacs{$File::Find::name}=(stat(_))[7]) &&
+     return;
+ 
+     # check for derivable tex files
+     (/\.dvi$/ || /\.aux$/ || /\.toc$/) &&
+     &BaseFileExists($File::Find::name) &&
+     ($tex{$File::Find::name} = (stat(_))[7]) &&
+     return;
+
+     # check for derivable .o files
+     /\.o$/ &&
+     &BaseFileExists($File::Find::name) &&
+     ($doto{$File::Find::name} = (stat(_))[7]) &&
+     return;
+}
+
+# check to see if a derivable file exists
+sub BaseFileExists {
+    my($name,$path,$suffix) =
+      &File::Basename::fileparse($_[0],'\..*');
+
+    # if we don't know how to derive this type of file
+    return 0 unless (defined $derivations{$suffix});
+
+    # easy, we've seen the base file before
+    return 1 if (defined $baseseen{$path.$name.$derivations{$suffix}});
+
+    # if file (or file link points to) exists and has non-zero size
+    return 1 if (-s $name.$derivations{$suffix} &&
+		 ++$baseseen{$path.$name.$derivations{$suffix}});
+}
+
+# convert bytes to X.XXMB
+sub BytesToMeg{ 
+    return sprintf("%.2f",($_[0]/1024000));
+}
+-------
+#*
+#* autoedquota - edit quota using "sleight-of-hand" method
+#*
+
+$edquota = "/usr/etc/edquota"; # edquota path
+$autoedq = "/usr/adm/autoedquota"; # full path for this script
+
+# are we the first or second invocation?
+# if there is more than one argument, we're the first invocation
+if ($#ARGV > 0) {
+    &ParseArgs;
+    &CallEdquota;
+}
+# else - we're the second invocation and will have to perform the edits
+else {
+    &EdQuota();
+}
+
+sub ParseArgs{
+    use Getopt::Std; # for switch processing
+
+    # This sets $opt_u to the user id, $opt_f to the filesystem name,
+    # $opt_s to the soft quota amount and $opt_h to the hard quota
+    # amount
+    getopt("u:f:s:h:"); # colon (:) means this flag takes an argument
+
+    die "USAGE: $0 -u uid -f <fsystem> -s <softq> -h <hardq>\n"
+        if (!$opt_u || !$opt_f || !$opt_s || !$opt_h);
+}
+
+sub CallEdquota{
+    $ENV{"EDITOR"} = $autoedq; #set the EDITOR variable to point to us
+    open(EPROCESS, "|$edquota $opt_u") or
+      die "Unable to start edquota:$!\n";
+
+    # send the changes line to the second script invocation
+    print EPROCESS "$opt_f|$opt_s|$opt_h\n";
+    close(EPROCESS);
+}
+
+sub EdQuota {
+    $tfile = $ARGV[0]; # get the name of edquota's temp file
+    open(TEMPFILE, $tfile) or
+      die "Unable to open temp file $tfile:$!\n";
+
+    # open a scratch file
+    open(NEWTEMP, ">$tfile.$$") or
+      die "Unable to open scratch file $tfile.$$:$!\n";
+
+    # receive line of input from first invocation and lop off the newline
+    chomp($change = <STDIN>);
+    my($fs,$soft,$hard) = split(/\|/,$change); # parse the communique
+
+    # read in a line from the temp file. If it contains the
+    # filesystem we wish to modify, change its values. Write the input
+    # line (possibly changed) to the scratch file.
+    while (<TEMPFILE>){
+	if (/^fs $fs\s+/){
+	    s/(soft\s*=\s*)\d+(, hard\s*=\s*)\d+/$1$soft$2$hard/;
+	    print NEWTEMP;
+	}
+    }
+
+    close(TEMPFILE);
+    close(NEWTEMP);
+    
+    # overwrite the temp file with our modified scratch file so
+    # edquota will get the changes
+    rename("$tfile.$$",$tfile)
+      or die "Unable to rename $tfile.$$ to $tfile:$!\n";
+}
+-------
+#*
+#* edit quota using Quota module method
+#*
+
+use Getopt::Std;
+use Quota:;
+getopt("u:f:s:h:");
+
+die "USAGE: $0 –u uid –f <filesystem> -s <softquota> -h <hard quota>\n"
+  if (!$opt_u || !$opt_f || !$opt_s || !$opt_h);
+
+$dev = Quota::getcarg($opt_f) or die "Unable to translate path $opt_f:$!\n";
+
+($curblock,$soft,$hard,$curinode,$btimeout,$curinode,$isoft,$ihard,$itimeout)=
+  Quota::query($dev,$uid) or die "Unable to query quota for $uid:$!\n";
+
+Quota::setqlim($dev,$opt_u,$opt_s,$opt_h,$isoft,$ihard,1) or
+  die "Unable to set quotas:$!\n";
+-------
+#*
+#* query filesystem usage under MacOS
+#*
+
+use Mac::Glue qw(:all);
+$fobj = new Mac::Glue 'Finder';
+$volumename = "Macintosh HD"; # the name of one of our mounted disks
+$total = $fobj->get($fobj->prop('capacity',disk => $volumename),as => 'doub');
+$free = $fobj->get($fobj->prop('free_space',disk => $volumename),as => 'doub');
+print "$free bytes of $total bytes free\n";
+-------
+#*
+#* query filesystem usage under WinNT/2000
+#*
+
+use Win32::AdminMisc;
+($total,$free) = Win32::AdminMisc::GetDriveSpace("c:\\");
+print "$free bytes of $total bytes free\n";
+-------
+#*
+#* query filesystem usage under UNIX
+#*
+
+use Filesys::Df;
+$fobj = df("/");
+print $fobj->{su_bavail}*1024." bytes of ".
+  $fobj->{su_blocks}*1024." bytes free\n";
+
+
+
+

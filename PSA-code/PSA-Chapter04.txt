@@ -1,0 +1,554 @@
+Example code from Perl for System Administration by David N. Blank-Edelman
+O'Reilly and Associates, 1st Edition, ISBN 1-56592-609-9
+
+Chapter Four
+============
+#*
+#* show the PSN list under Mac OS
+#*
+
+use Mac::Processes;
+print map{"$_\n"} keys %Process;
+-------
+#*
+#* show the list of running processes and their names under Mac OS
+#*
+
+use Mac::Processes;
+while(($psn, $psi) = each (%Process)){
+  $name = $psi->processName();	
+  write;
+}
+
+format STDOUT_TOP =
+Process Serial Number      Process Name
+=====================      =========================================
+.
+
+format STDOUT =
+@<<<<<<                    @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$psn,                      $name
+.
+-------
+#*
+#* show the process list on NT/2000 using PULIST from the NT Resource Kit
+#*
+
+$pulistexe = "\\bin\\PULIST.EXE"; # location of the executable
+open(PULIST,"$pulistexe|") or die "Can't execute $pulistexe:$!\n";
+
+scalar <PULIST>; # drop the first title line
+while(defined($_=<PULIST>)){
+    ($pname,$pid,$puser) = /^(\S+)\s*(\d+)\s*(.+)/;
+    print "$pname:$pid:$puser\n";
+
+close(PULIST);
+-------
+#*
+#* show the list of process ids under NT/2000 using Win32::IProc
+#*
+use Win32::IProc;
+
+# note case of object is important, must be "IProc"
+$pobj = new Win32::IProc or die "Unable to create proccess object: $!\n";
+
+$pobj-> EnumProccesses(\@processlist) or 
+   die "Unable to get process list:$!\n";
+-------
+#*
+#* show the list of process ids and names under NT/2000 using Win32::IProc
+#*
+use Win32::IProc;
+
+$pobj=new Win32::IProc or die "Unable to create process object: $!\n";
+
+$pobj->EnumProcesses(\@processlist) or 
+  die "Unable to get process list:$!\n";
+
+foreach $process (@processlist){
+  $pid  = $process->{ProcessId};
+  $name = $process->{ProcessName};
+  write;
+}
+
+format STDOUT_TOP =
+Process ID      Process Name
+==========      ===============================
+.
+format STDOUT =
+@<<<<<<<        @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$pid,           $name
+.
+-------
+#*
+#* show the list of process names and their dlls using Win32::IProc
+#*
+
+# imports the FULLPATH constant to show the path for the dlls, could be NOPATH
+use Win32::IProc "FULLPATH"; 
+
+$pobj = new Win32::IProc;
+
+$pobj->EnumProcesses(\@processlist) or 
+  die "Unable to get process list:$!\n";
+
+foreach $process (@processlist){
+  print "\n",$process->{ProcessName},
+        "\n",('=' x length($process->{ProcessName})),"\n";
+
+  $pobj->GetProcessModules($process->{ProcessId},\@modules,FULLPATH);
+  print join("\n",map {lc $_->{ModuleName}} @modules),"\n";
+}
+-------
+#*
+#* show the process time info under NT/2000 using Win32::Iproc
+#*
+
+use Win32::IProc qw(PROCESS_QUERY_INFORMATION INHERITED DIGITAL);
+
+$pobj = new Win32::IProc;
+
+$pobj->Open($ARGV[0],PROCESS_QUERY_INFORMATION,INHERITED,\$handle) or
+  warn "Can't get handle:".$pobj->LastError()."\n";
+
+# DIGITAL = pretty-printed times
+$pobj->GetStatus($handle,\$statusinfo,DIGITAL); 
+
+$pobj->CloseHandle($handle);
+
+while (($procname,$value)=each %$statusinfo){
+  print "$procname: $value\n";
+}
+-------
+#*
+#* show the process ids and names under NT/2000 using Win32::Setupsup
+#*
+use Win32::Setupsup;
+
+$machine = ""; # query the list on the current machine
+
+Win32::Setupsup::GetProcessList($machine, \@processlist, \@threadlist) or 
+  die "process list error: ".Win32::Setupsup::GetLastError()."\n";
+
+pop(@processlist); # remove the bogus entry always appended to the list
+foreach $processlist (@processlist){
+  $pid  = $processlist->{pid};
+  $name = $processlist->{name};
+  write;
+}
+
+format STDOUT_TOP =
+Process ID      Process Name
+==========      ===============================
+.
+format STDOUT =
+@<<<<<<<        @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$pid,           $name
+.
+-------
+#*
+#* show the window handle and title under NT/2000 
+#*
+
+use Win32::Setupsup;
+
+Win32::Setupsup::EnumWindows(\@windowlist) or 
+  die "process list error: ".Win32::Setupsup::GetLastError()."\n";
+
+foreach $whandle (@windowlist){
+    if (Win32::Setupsup::GetWindowText($whandle,\$text)){
+      print "$whandle: $text","\n";
+    }
+    else {
+      warn "Can't get text for $whandle" .    
+            Win32::Setupsup::GetLastError()."\n";
+    }
+}
+-------
+#*
+#* show the window hierarchy under NT/2000
+#*
+
+use Win32::Setupsup;
+
+# get the list of windows
+Win32::Setupsup::EnumWindows(\@windowlist) or 
+  die "process list error: ".Win32::Setupsup::GetLastError()."\n";
+
+# turn window handle list into a hash
+# NOTE: this conversion populates the hash with plain numbers and 
+# not actual window handles as keys. Some functions, like 
+# GetWindowProperties (which we'll see in a moment) can't use these 
+# converted numbers. Caveat implementor.
+for (@windowlist){$windowlist{$_}++;}
+
+# check each window for children
+foreach $whandle (@windowlist){
+    if (Win32::Setupsup::EnumChildWindows($whandle,\@children)){
+       # keep a sorted list of children for each window
+       $children{$whandle} = [sort {$a <=>$b} @children];     
+
+       # remove all children from the hash, we won't directly 
+       #iterate over them
+       foreach $child (@children){
+         delete $windowlist{$child};
+       }
+    }
+}
+
+# iterate through the list of parent or childless windows and
+# recursively print each window handle and its children (if any)
+foreach my $window (sort {$a <=> $b} keys %windowlist){
+  &printfamily($window,0);
+}
+
+# print a given window handle number and its children (recursively)
+sub printfamily {
+  # starting window, how deep in a tree are we?
+  my($startwindow,$level) = @_; 
+
+  # print the window handle number at the appropriate indentation
+  print(("  " x $level)."$startwindow\n");
+ 
+  return unless (exists $children{$startwindow}); # no children, done.
+ 
+  # otherwise, we have to recurse for each child
+  $level++;
+  foreach $childwindow (@{$children{$startwindow}}){
+     &printfamily($childwindow,$level);
+  }
+}
+-------
+#*
+#* show the geometry of a particular window under NT/2000
+#*
+
+use Win32::Setupsup;
+
+Win32::Setupsup::GetWindowProperties($ARGV[0],[rect,id],\%info);
+
+print "\t" . $info{rect}{top} . "\n";
+print $info{rect}{left} . " -" . $ARGV[0] . "- " . $info{rect}{right} . "\n";
+print "\t" . $info{rect}{bottom} . "\n";
+-------
+#*
+#* make the specified window jump to a particular place on the screen
+#*
+
+use Win32::Setupsup;
+
+$info{rect}{left}  = 0;
+$info{rect}{right} = 600;
+$info{rect}{top}   = 10;
+$info{rect}{bottom}= 500;
+Win32::Setupsup::SetWindowProperties($ARGV[0],\%info);
+-------
+#*
+#* send text (as if typed) to a particular window
+#*
+
+use Win32::Setupsup;
+
+$texttosend = "\\DN\\Low in the gums";
+Win32::Setupsup::SendKeys($ARGV[0],$texttosend,'',0);
+-------
+#*
+#* retrieve a WMI Win32_Process object (the hard way)
+#*
+use Win32::OLE('in');
+
+$server = ''; # connect to local machine
+
+# get a SWbemLocator object
+$lobj = Win32::OLE->new('WbemScripting.SWbemLocator') or 
+  die "can't create locator object: ".Win32::OLE->LastError()."\n";
+
+# set the impersonate level to "impersonate"
+$lobj->{Security_}->{impersonationlevel} = 3;
+
+# use it to get a an SWbemServices object 
+$sobj = $lobj->ConnectServer($server, 'root\cimv2') or 
+  die "can't create server object: ".Win32::OLE->LastError()."\n";
+
+# get the schema object
+$procschm = $sobj->Get('Win32_Process'); 
+-------
+#*
+#* retrieve a WMI Win32_Process object (the easy way)
+#*
+use Win32::OLE('in');
+
+$procschm = Win32::OLE->GetObject(                    
+  'winmgmts:{impersonationLevel=impersonate}!Win32_Process')
+     or die "can't create server object: ".Win32::OLE->LastError()."\n"; 
+-------
+#*
+#* show the properties and methods of the Win32_Process object by querying 
+#* the schema 
+#*
+use Win32::OLE('in');
+
+# connect to namespace, set the impersonate level, and retrieve the 
+# Win32_process object just by using a display name
+$procschm = Win32::OLE->GetObject(
+             'winmgmts:{impersonationLevel=impersonate}!Win32_Process')
+     or die "can't create server object: ".Win32::OLE->LastError()."\n"; 
+
+print "--- Properties ---\n";
+print join("\n",map {$_->{Name}}(in $procschm->{Properties_}));
+print "\n--- Methods ---\n";
+print join("\n",map {$_->{Name}}(in $procschm->{Methods_}));
+-------
+#*
+#* retrieve the list of currently running processes using WMI under NT/2000
+#*
+
+use Win32::OLE('in');
+
+# perform all of the initial steps in one swell foop
+
+$sobj = Win32::OLE->GetObject(
+                      'winmgmts:{impersonationLevel=impersonate}')
+      or die "can't create server object: ".Win32::OLE->LastError()."\n"; 
+
+foreach $process (in $sobj->InstancesOf("Win32_Process")){
+  print $process->{Name}." is pid #".$process->{ProcessId},"\n";
+}
+-------
+#*
+#* retrieve the process id/user list under UNIX by looking at /proc
+#*
+
+opendir(PROC,"/proc") or die "Unable to open /proc:$!\n";
+while (defined($_= readdir(PROC))){
+    next if ($_ eq "." or $_ eq "..");
+    next unless /^\d+$/; # filter out any random non-pid files
+    print "$_\t". getpwuid((lstat "/proc/$_")[4])."\n";
+}
+closedir(PROC);
+-------
+#*
+#* retrieve a list of process ids/owners under UNIX using Proc::ProcessTable
+#*
+
+use Proc::ProcessTable;
+
+$tobj = new Proc::ProcessTable;
+$proctable = $tobj->table();
+for (@$proctable){
+    print $_->pid."\t". getpwuid($_->uid)."\n";
+}
+-------
+#*
+#* look and log processes named "eggdrop" under UNIX
+#*
+
+use Proc::ProcessTable;
+
+open(LOG,">>$logfile") or die "Can't open logfile for append:$!\n";
+
+$t = new Proc::ProcessTable;
+foreach $p (@{$t->table}){    
+    if ($p->fname() =~ /eggdrop/i){
+	print LOG time."\t".getpwuid($p->uid)."\t".$p->fname()."\n";
+    }             
+}
+close(LOG);
+-------
+#*
+#* collect stats on running processes under UNIX and dump them once an hour
+#*
+
+use Proc::ProcessTable;
+
+$interval    = 600; # sleep interval of 5 minutes
+$partofhour  =   0; # keep track of where in hour we are
+
+$tobj = new Proc::ProcessTable; # create new process object
+
+# forever loop, collecting stats every $intervar secs 
+# and dumping them once an hour
+while(1){
+    &collectstats;
+    &dumpandreset if ($partofhour >= 3600);
+    sleep($interval);
+}
+
+# collect the process statistics
+sub collectstats {
+    my($process);
+    foreach $process (@{$tobj->table}){
+	    
+        # we should ignore ourself
+        next if ($process->pid() == $$);
+        
+        # save this process info for our next run
+        push(@last,$process->pid(),$process->fname());
+
+        # ignore this process if we saw it last iteration
+        next if ($last{$process->pid()} eq $process->fname());
+
+        # else, remember it
+        $collection{$process->fname()}++;
+    }
+    # set the last hash using the current table for our next run
+    %last = @last;
+    $partofhour += $interval;
+}
+
+# dump out the results and reset our counters
+sub dumpandreset{
+    print scalar localtime(time).("-"x50)."\n";
+    for (sort reverse_value_sort keys %collection){
+        write;
+    }
+
+    # reset counters
+    undef %collection;
+    $partofhour = 0;
+}
+
+# (reverse) sort by values in %collection and by key name
+sub reverse_value_sort{
+    return $collection{$b} <=> $collection{$a} || $a cmp $b;
+}
+
+format STDOUT =
+@<<<<<<<<<<<<<  @>>>>
+$_,             $collection{$_}
+.
+
+format STDOUT_TOP =
+Name            Count
+--------------  -----
+.
+-------
+#*
+#* audit a filesystem for 5 changes under NT/2000
+#*
+
+use Win32::AdvNotify qw(All %ActionName); 
+use Data::Dumper;
+
+$aobj = new Win32::AdvNotify() or die "Can't make a new object:\n";
+
+$thread = $aobj->StartThread(Directory => 'C:\temp',
+                             Filter => All,
+                             WatchSubtree => 0) 
+  or die "Unable to start thread\n";
+
+$thread->EnableWatch() or die "Can't start watching\n";
+
+while($thread->Wait(INFINITE)){
+    while ($thread->Read(\@status)){
+        foreach $event (@status){
+            $filename = $event->{FileName};
+            $time     = $event->{DateTime};
+            $action   = $ActionName{$event->{Action}};
+            write;
+        }
+    }
+    last if ($changes++ == 5);
+}
+
+$thread->Terminate();
+undef $aobj;
+
+format STDOUT = 
+@<<<<<<<<<<<<<<<<<<< @<<<<<<<<<<<<<<<<<<< @<<<<<<<<<<<<<<<<<<<
+$filename,$time,$action
+.
+
+format STDOUT_TOP =
+File Name            Date                 Action
+-------------------  -------------------- ---------------------
+.
+-------
+#*
+#* show open network ports under NT/2000 using Win32::IpHelp
+#*
+
+use Win32::IpHelp;
+
+# note: the case of "IpHelp" is signficant in this call
+my $iobj = new Win32::IpHelp; 
+
+# populates list of hash of hashes
+$iobj->GetTcpTable(\@table,1); 
+
+foreach $entry (@table){
+    print $entry->{LocalIP}->{Value} . ":" . 
+          $entry->{LocalPort}->{Value}. " -> ";
+    print $entry->{RemoteIP}->{Value} . ":" . 
+          $entry->{RemotePort}->{Value}."\n";
+}
+-------
+#*
+#* show open files and the pids that user them under UNIX using lsof
+#*
+
+use Text::Wrap; # for pretty printing
+
+$lsofexec = "/usr/local/bin/lsof"; # location of lsof executable
+
+# (F)ield mode, NUL (0) delim, show (L)ogin, file (t)ype and file (n)ame
+$lsofflag = "-FL0tn"; 
+open(LSOF,"$lsofexec $lsofflag|") or  die "Unable to start $lsof:$!\n";
+
+while(<LSOF>){
+    # deal with a process set
+    if (substr($_,0,1) eq "p"){
+        ($pid,$login) = split(/\0/);
+        $pid = substr($pid,1,length($pid));
+    }
+
+    # deal with a file set, note: we are only interested 
+    # in "regular" files
+    if (substr($_,0,5) eq "tVREG"){
+        ($type,$pathname) = split(/\0/);
+
+        # a process may have the same path name open twice, 
+        # these two lines make sure we only record it once
+        next if ($seen{$pathname} eq $pid);
+        $seen{$pathname} = $pid;
+
+        $pathname = substr($pathname,1,length($pathname));
+        push(@{$paths{$pathname}},$pid);
+    }
+}
+
+close(LSOF);
+
+for (sort keys %paths){
+    print "$_:\n";
+    print wrap("\t","\t",join(" ",@{$paths{$_}})),"\n";
+}
+-------
+#*
+#* check for unauthorized IRC clients (e.g bots).
+#*
+
+$lsofexec = "/usr/local/bin/lsof";
+$lsofflag = "-FL0c -iTCP:6660-7000";
+
+# this is a hash slice being used to preload a hash table, the 
+# existence of whose keys we'll check later. Usually this gets written 
+# like this:
+#     %approvedclients = ("ircII" => undef, "xirc" => undef, ...); 
+# (but this is a cool idiom popularized by Mark-Jason Dominus)
+@approvedclients{"ircII","xirc","pirc"} = (); 
+
+open(LSOF,"$lsofexec $lsofflag|") or
+  die "Unable to start $lsof:$!\n";
+
+while(<LSOF>){
+    ($pid,$command,$login) = /p(\d+)\000
+                              c(.+)\000
+                              L(\w+)\000/x;
+    warn "$login using an unapproved client called $command (pid $pid)!\n"
+      unless (exists $approvedclients{$command});
+}
+
+close(LSOF);
+
+

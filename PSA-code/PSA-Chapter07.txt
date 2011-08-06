@@ -1,0 +1,677 @@
+Example code from Perl for System Administration by David N. Blank-Edelman
+O'Reilly and Associates, 1st Edition, ISBN 1-56592-609-9
+
+Chapter Seven
+=============
+
+#*
+#* connecting/disconnecting to an SQL server using DBI
+#*
+
+use DBI;
+
+# connect using to the database named $database using given 
+# username and password, return a database handle
+$database = "sysadm";
+$dbh = DBI->connect("DBI:mysql:$database",$username,$pw);
+die "Unable to connect: $DBI::errstr\n" unless (defined $dbh);
+
+$dbh = DBI->connect("DBI:mysql:$database",$username,$pw,{RaiseError => 1});
+
+# <perform tasks>
+
+# tells server you will not need more data from statement handle
+# (optional, since we're just about to disconnect)
+$sth->finish;  
+# disconnects handle from database
+$dbh->disconnect;
+-------
+#*
+#* two ways to send commands to an SQL using DBI
+#*
+
+$results=$dbh->do(q{UPDATE hosts 
+                    SET bldg = 'Main' 
+                    WHERE name = 'bendir'});
+die "Unable to perform update:$DBI::errstr\n" unless (defined $results)
+
+### OR ###
+
+$sth = $dbh->prepare(q{SELECT * from hosts}) or 
+  die "Unable to prep our query:".$dbh->errstr."\n";
+$rc = $sth->execute or 
+  die "Unable to execute our query:".$dbh->errstr."\n";
+-------
+#*
+#* two examples of placeholder use with DBI
+#*
+
+@machines = qw(bendir shimmer sander);
+$sth = $dbh->prepare(q{SELECT name, ipaddr FROM hosts WHERE name = ?});
+foreach $name (@machines){
+  $sth->execute($name);
+  #<do-something-with-the-results>
+}
+
+### OR ###
+
+$sth->prepare(
+   q{SELECT name, ipaddr FROM hosts 
+     WHERE (name = ? AND bldg = ? AND dept = ?)});
+$sth->execute($name,$bldg,$dept);
+-------
+#*
+#* several ways to retrieve query results using DBI
+#*
+
+# the query
+$sth = $dbh->prepare(q{SELECT name,ipaddr,dept from hosts}) or
+  die "Unable to prepare our query: ".$dbh->errstr."\n";
+$sth->execute or die "Unable to execute our query: ".$dbh->errstr."\n";
+
+while ($aref = $sth->fetchrow_arrayref){
+  print "name: "   .  $aref->[0] . "\n";
+  print "ipaddr: " .  $aref->[1] . "\n";
+  print "dept: "   .  $aref->[2] . "\n";
+}
+
+### OR ###
+
+while ($href = $sth->fetchrow_hashref){
+  print "name: "   .  $href->{name}  . "\n";
+  print "ipaddr: " .  $href->{ipaddr}. "\n";
+  print "dept: "   .  $href->{dept}  . "\n";
+}
+
+### OR ###
+
+$aref_aref = $sth->fetchall_arrayref;
+foreach $rowref (@$aref_aref){
+  print "name: "   .  $rowref->[0] . "\n";
+  print "ipaddr: " .  $rowref->[1] . "\n";
+  print "dept: "   .  $rowref->[2] . "\n";
+  print '-'x30,"\n";
+}
+
+### OR ###
+
+$aref_aref = $sth->fetchall_arrayref;
+foreach $rowref (@$aref_aref){
+  for ($i=0; $i < $sth->{NUM_OF_FIELDS};i++;){
+    print $sth->{NAME}->[$i].": ".$rowref->[$i]."\n";
+  } 
+  print '-'x30,"\n";
+}
+-------
+#*
+#* snippet showing bind_columns from DBI
+#*
+
+$sth = $dbh->prepare(q{SELECT name,ipaddr,dept from hosts}) or
+  die "Unable to prep our query:".$dbh->errstr".\n";
+$rc = $sth->execute or 
+  die "Unable to execute our query:".$dbh->errstr".\n";
+
+# these variables will receive the 1st, 2nd and 3rd columns 
+# from our SELECT
+$rc = $sth->bind_columns(\$name,\$ipaddr,\$dept);
+
+while ($sth->fetchrow_arrayref){
+    # $name, $ipaddr, and $dept are automagically filled in from 
+    # the fetched query results row
+    #<do-something-with-the-results>
+}
+-------
+#*
+#* creating a DSN and connecting to a server, disconnecting and removing
+#* the DSN using ODBC
+#*
+
+# creates a user DSN to a Microsoft SQL Server
+# note: to create a system DSN, substitute ODBC_ADD_SYS_DSN 
+# for ODBC_ADD_DSN
+if (Win32::ODBC::ConfigDSN(
+                   ODBC_ADD_DSN, 
+                   "SQL Server", 
+                   ("DSN=PerlSysAdm", 
+                    "DESCRIPTION=DSN for PerlSysAdm", 
+                    "SERVER=mssql.happy.edu",  # server name
+                    "ADDRESS=192.168.1.4",     # server IP addr
+                    "DATABASE=sysadm",         # our database
+                    "NETWORK=DBMSSOCN",        # TCP/IP Socket Lib
+                   ))){
+    print "DSN created\n";
+                             }
+else {
+    die "Unable to create DSN:" . Win32::ODBC::Error() . "\n";
+}
+
+# connect to the named DSN, returns a database handle
+$dbh=new Win32::ODBC("DSN=PerlSysAdm;UID=$username;PWD=$pw;");
+die "Unable to connect to DSN PerlSysAdm:" . Win32::ODBC::Error() . "\n" 
+  unless (defined $dbh);
+
+#<perform operations>
+
+$dbh->close();
+
+# replace ODBC_REMOVE_DSN with ODBC_REMOVE_SYS_DSN if you created a system DSN
+if (Win32::ODBC::ConfigDSN(ODBC_REMOVE_DSN,
+                           "SQL Server","DSN=PerlSysAdm")){
+    print "DSN deleted\n";
+}
+else {
+    die "Unable to delete DSN:".Win32::ODBC::Error()."\n";
+}
+-------
+#*
+#* two examples of sending queries to an SQL server using ODBC 
+#*
+
+$rc = $dbh->Sql(q{SELECT * from hosts});
+
+### OR ###
+
+if (defined $dbh->Sql(q{UPDATE hosts 
+                        SET bldg = 'Main' 
+                        WHERE name = 'bendir'})){
+    die "Unable to perform update: ".Win32::ODBC::Error()."\n"
+}
+else {
+    $results = $dbh->RowCount();
+}
+-------
+#*
+#* two ways to retrieve results from a server using ODBC
+#*
+
+if ($dbh->FetchRow()){
+  @ar = $dbh->Data(); 
+  #<do-stuff-with-@ar-values>
+}
+
+### OR ###
+
+if ($dbh->FetchRow()){
+   $ha = $dbh->DataHash('name','ipaddr'); 
+   #<do-stuff-with-$ha{name}-and-$ha{ipaddr}>
+}
+-------
+#*
+#* documented an MySQL server using DBI
+#*
+
+use DBI;
+
+print "Enter user for connect: ";
+chomp($user = <STDIN>);
+print "Enter passwd for $user: ";
+chomp($pw = <STDIN>);
+
+$start= "mysql"; # connect initially to this database
+
+# connect to the start MySQL database
+$dbh = DBI->connect("DBI:mysql:$start",$user,$pw);
+die "Unable to connect: ".$DBI::errstr."\n" unless (defined $dbh);
+
+# find the databases on the server 
+$sth=$dbh->prepare(q{SHOW DATABASES}) or
+  die "Unable to prepare show databases: ". $dbh->errstr."\n";
+$sth->execute or
+  die "Unable to exec show databases: ". $dbh->errstr."\n";
+while ($aref = $sth->fetchrow_arrayref) {
+    push(@dbs,$aref->[0]);
+} 
+$sth->finish;
+
+# find the tables in each database
+foreach $db (@dbs) {
+    print "---$db---\n";
+    
+    $sth=$dbh->prepare(qq{SHOW TABLES FROM $db}) or
+      die "Unable to prepare show tables: ". $dbh->errstr."\n";
+    $sth->execute or
+      die "Unable to exec show tables: ". $dbh->errstr."\n";
+
+    @tables=();
+    while ($aref = $sth->fetchrow_arrayref) {
+	push(@tables,$aref->[0]);
+    } 
+
+    $sth->finish;
+    
+   # find the column info for each table
+   foreach $table (@tables) {
+       print "\t$table\n";
+
+       $sth=$dbh->prepare(qq{SHOW COLUMNS FROM $table FROM $db}) or
+	 die "Unable to prepare show columns: ". $dbh->errstr."\n";
+       $sth->execute or
+	 die "Unable to exec show columns: ". $dbh->errstr."\n";
+       
+       while ($aref = $sth->fetchrow_arrayref) {
+	   print "\t\t",$aref->[0]," [",$aref->[1],"]\n";
+       } 
+
+       $sth->finish;
+   }
+}
+$dbh->disconnect;
+-------
+#*
+#* documenting a Sybase server using DBI
+#*
+
+use DBI;
+
+print "Enter user for connect: ";
+chomp($user = <STDIN>);
+print "Enter passwd for $user: ";
+chomp($pw = <STDIN>);
+
+$dbh = DBI->connect('dbi:Sybase:',$user,$pw);
+die "Unable to connect: $DBI::errstr\n" 
+  unless (defined $dbh);
+
+# find the databases on the server 
+$sth = $dbh->prepare(q{SELECT name from master.dbo.sysdatabases}) or
+  die "Unable to prepare sysdatabases query: ".$dbh->errstr."\n";
+$sth->execute or
+  die "Unable to execute sysdatabases query: ".$dbh->errstr."\n";
+
+while ($aref = $sth->fetchrow_arrayref) {
+    push(@dbs, $aref->[0]);
+}
+$sth->finish;
+
+foreach $db (@dbs) {
+    $dbh->do("USE $db") or
+      die "Unable to use $db: ".$dbh->errstr."\n";
+    print "---$db---\n";
+
+    # find the tables in each database
+    $sth=$dbh->prepare(q{SELECT name FROM sysobjects WHERE type="U"}) or
+      die "Unable to prepare sysobjects query: ".$dbh->errstr."\n";
+    $sth->execute or
+      die "Unable to exec sysobjects query: ".$dbh->errstr."\n";
+
+    @tables=();
+    while ($aref = $sth->fetchrow_arrayref) {
+        push(@tables,$aref->[0]);
+    } 
+    $sth->finish;
+
+    # we need to be "in" the database for the next step
+    $dbh->do("use $db") or
+      die "Unable to change to $db: ".$dbh->errstr."\n";
+  
+    # find the column info for each table
+    foreach $table (@tables) {
+	print "\t$table\n";
+
+	$sth=$dbh->prepare(qq{EXEC sp_columns $table}) or
+	  die "Unable to prepare sp_columns query: ".$dbh->errstr."\n";
+	$sth->execute or
+	  die "Unable to execute sp_columns query: ".$dbh->errstr."\n";
+	
+	while ($aref = $sth->fetchrow_arrayref) {
+	    print "\t\t",$aref->[3]," [",$aref->[5],"(",$aref->[6],")]\n";
+	} 
+	$sth->finish;
+    }
+}
+$dbh->disconnect or
+  warn "Unable to disconnect: ".$dbh->errstr."\n";
+-------
+#*
+#* documenting an MS-SQL server using ODBC
+#*
+
+use Win32::ODBC;
+
+print "Enter user for connect: ";
+chomp($user = <STDIN>);
+print "Enter passwd for $user: ";
+chomp($pw = <STDIN>);
+
+$dsn="sysadm"; # name of the DSN we will be using
+
+# find the available DSNs, creating $dsn if it doesn't exist already
+die "Unable to query available DSN's".Win32::ODBC::Error()."\n" 
+  unless (%dsnavail = Win32::ODBC::DataSources());
+if (!defined $dsnavail{$dsn}) {
+    die "unable to create DSN:".Win32::ODBC::Error()."\n"
+      unless (Win32::ODBC::ConfigDSN(ODBC_ADD_DSN, 
+				  "SQL Server", 
+				  ("DSN=$dsn", 
+				   "DESCRIPTION=DSN for PerlSysAdm", 
+				   "SERVER=mssql.happy.edu",
+				   "DATABASE=master",
+				   "NETWORK=DBMSSOCN", # TCP/IP Socket Lib
+				  )));
+}
+
+# connect to the master database
+$dbh = new Win32::ODBC("DSN=$dsn;UID=$user;PWD=$pw;");
+die "Unable to connect to DSN $dsn:".Win32::ODBC::Error()."\n" 
+  unless (defined $dbh);
+
+# find the databases on the server
+if (defined $dbh->Sql(q{SELECT name from sysdatabases})){
+    die "Unable to query databases:".Win32::ODBC::Error()."\n";
+}
+
+while ($dbh->FetchRow()){
+    push(@dbs, $dbh->Data("name"));
+}
+$dbh->DropCursor();
+
+# find the user tables in each database
+foreach $db (@dbs) {
+    if (defined $dbh->Sql("use $db")){
+	die "Unable to change to database $db:" . Win32::ODBC::Error() . "\n";
+    }
+    print "---$db---\n";
+    @tables=();
+    if (defined $dbh->Sql(q{SELECT name from sysobjects 
+                            WHERE type="U"})){
+	die "Unable to query tables in $db:" . Win32::ODBC::Error() . "\n";
+    }
+    while ($dbh->FetchRow()) {
+	push(@tables,$dbh->Data("name"));
+    } 
+    $dbh->DropCursor();
+
+    # find the column info for each table
+    foreach $table (@tables) {
+  	    print "\t$table\n";
+  	    if (defined $dbh->Sql(" {call sp_columns (\'$table\')} ")){
+	        die "Unable to query columns in 
+                  $table:".Win32::ODBC::Error() . "\n";
+	    }
+	    while ($dbh->FetchRow()) {
+	        @cols=();
+	        @cols=$dbh->Data("COLUMN_NAME","TYPE_NAME","PRECISION");
+	        print "\t\t",$cols[0]," [",$cols[1],"(",$cols[2],")]\n";
+	    } 
+	    $dbh->DropCursor();
+	}
+}
+$dbh->Close();
+
+die "Unable to delete DSN:".Win32::ODBC::Error()."\n"
+    unless (Win32::ODBC::ConfigDSN(ODBC_REMOVE_DSN,
+                                "SQL Server","DSN=$dsn"));
+-------
+#*
+#* creating logins on a Sybase server using DBI
+#*
+
+-------use DBI;
+
+# USAGE: syaccreate <username>
+
+$admin = 'sa';
+print "Enter passwd for $admin: ";
+chomp($pw = <STDIN>);
+$user=$ARGV[0];
+
+# generate a *bogus* password based on user name reversed 
+# and padded to at least 6 chars with dashes
+$genpass = reverse join('',reverse split(//,$user));
+$genpass .= "-" x (6-length($genpass));
+
+# here's a list of the SQL commands we will execute in order
+# we: 1) create the database on the USER_DISK device, 
+#        with the log on USER_LOG
+#     2) add a login to the server for the user, 
+#        making the new database the default
+#     3) switch to the newly created database
+#     4) change its owner to be this user
+@commands = ("create database $user on USER_DISK=5 log on USER_LOG=5",
+             "sp_addlogin $user,\"$genpass\",$user",
+             "use $user",
+             "sp_changedbowner $user");
+
+# connect to the server 
+$dbh = DBI->connect('dbi:Sybase:',$admin,$pw);
+die "Unable to connect: $DBI::errstr\n" 
+  unless (defined $dbh);
+
+# loop over the command array, execute each command in turn
+for (@commands) {
+    $dbh->do($_) or die "Unable to $_: " . $dbh->errstr . "\n";
+}
+
+$dbh->disconnect;
+
+#*
+#* deleting logins on a Sybase server using DBI
+#*
+
+use DBI;
+
+# USAGE: syacdelete <username>
+
+$admin = 'sa';
+print "Enter passwd for $admin: ";
+chomp($pw = <STDIN>);
+$user=$ARGV[0];
+
+# here's a list of the SQL commands we will execute in order
+# we: drop the user's database
+#     drop the user's server login
+@commands = ("drop database $user",
+            "sp_droplogin $user");
+
+# connect to the server
+$dbh = DBI->connect('dbi:Sybase:',$admin,$pw);
+die "Unable to connect: $DBI::errstr\n" 
+  unless(defined $dbh);
+
+# loop over the command array, execute each command in turn 
+for (@commands) {
+    $dbh->do($_) or die "Unable to $_: " . $dbh->errstr . "\n";
+}
+
+$dbh->disconnect or
+  warn "Unable to disconnect: " . $dbh->errstr . "\n";
+-------
+#*
+#* monitoring space usage on a Sybase server using DBI
+#*
+
+use DBI;
+
+$admin = 'sa';
+print "Enter passwd for $admin: ";
+chomp($pw = <STDIN>);
+$pages = 2; # data is stored in 2k pages
+
+# connect to the server
+$dbh = DBI->connect('dbi:Sybase:',$admin,$pw);
+die "Unable to connect: $DBI::errstr\n" 
+  unless (defined $dbh);
+
+# get the name of the databases on the server
+$sth = $dbh->prepare(q{SELECT name from sysdatabases}) or
+  die "Unable to prepare sysdatabases query: ".$dbh->errstr."\n";
+$sth->execute or
+  die "Unable to execute sysdatabases query: ".$dbh->errstr."\n";
+
+while ($aref = $sth->fetchrow_arrayref) {
+    push(@dbs, $aref->[0]);
+}
+$sth->finish;
+
+# retrieve stats for each of the databases
+foreach $db (@dbs) {
+    
+    # get and total the size column from all non-log segments
+    $size    = &querysum(qq{SELECT size FROM master.dbo.sysusages 
+                           WHERE  dbid = db_id(\'$db\') 
+                           AND    segmap != 4});
+    # get and total the size column for the log segment
+    $logsize = &querysum(qq{SELECT size FROM master.dbo.sysusages
+                           WHERE  dbid = db_id(\'$db\') 
+                           AND    segmap = 4});		      
+
+    # change to the database and retrieve usage stats
+    $dbh->do(q{use $db}) or
+      die "Unable to change to $db: ".$dbh->errstr."\n";
+
+    # we used the reserved_pgs function to return the number of pages
+    # used by both the data (doampg) and index (ioampg) part 
+    # of the database
+    $used=&querysum(q{SELECT reserved_pgs(id,doampg)+reserved_pgs(id,ioampg) 
+                     FROM sysindexes 
+                     WHERE id != 8});
+
+    # same, except this time we look at the log usage
+    $logused=&querysum(q{SELECT reserved_pgs(id, doampg) 
+                        FROM sysindexes 
+                        WHERE id=8});
+    
+    # show this information graphically
+    &graph($db,$size,$logsize,$used,$logused);
+}
+$dbh->disconnect;
+
+# prepare/exec a given single-column SELECT query, return 
+# the sum of the results
+sub querysum {
+    my($query) = shift;
+    my($sth,$aref,$sum);
+
+    $sth = $dbh->prepare($query) or
+      die "Unable to prepare $query: ".$dbh->errstr."\n";
+    $sth->execute or 
+      die "Unable to exec $query: ".$dbh->errstr."\n";
+
+    while ($aref=$sth->fetchrow_arrayref) {
+        $sum += $aref->[0];
+    }
+    $sth->finish;
+
+    $sum;
+}
+
+# print out nice chart given database name, size, log size, 
+# and usage info
+sub graph {
+    my($dbname,$size,$logsize,$used,$logused) = @_;
+
+    # line for data space usage
+    print ' 'x15 . '|'.'d'x (50 *($used/$size)) .
+          ' 'x (50-(50*($used/$size))) . '|';
+
+    # percentage used and total M for data space
+    printf("%.2f",($used/$size*100));
+    print "%/". (($size * $pages)/1024)."MB\n";
+    print $dbname.'-'x(14-length($dbname)).'-|'.(' 'x 49)."|\n";
+
+    if (defined $logsize) { # line for log space usage  
+        print ' 'x15 . '|' . 'l'x (50 *($logused/$logsize)) .
+	      ' 'x (50-(50*($logused/$logsize))) . '|';
+        # percentage used and total M for log space
+        printf("%.2f",($logused/$logsize*100));
+	print "%/". (($logsize * $pages)/1024)."MB\n";
+    }
+    else { # some databases do not have separate log space
+	print ' 'x15 . "|- no log".(' 'x 41)."|\n";
+    }
+    print "\n";
+}
+-------
+#*
+#* show minute-by-minute status of both a Sybase and an MS-SQL server using DBI
+#*
+
+use DBI;
+
+$syadmin = "sa";
+print "Sybase admin passwd: ";
+chomp($sypw = <STDIN>);
+
+$msadmin = "sa";
+print "MS-SQL admin passwd: ";
+chomp($mspw = <STDIN>);
+
+# connect to Sybase server
+$sydbh = DBI->connect("dbi:Sybase:server=SYBASE",$syadmin,$sypw);
+die "Unable to connect to sybase server: $DBI::errstr\n" 
+  unless (defined $sydbh);
+# turn on the ChopBlanks option to remove trailing whitespace in columns
+$sydbh->{ChopBlanks} = 1;
+
+# connect to MS-SQL server (handy that we can use DBD::Sybase for this!)
+$msdbh = DBI->connect("dbi:Sybase:server=MSSQL",$msadmin,$mspw);
+die "Unable to connect to mssql server: $DBI::errstr\n" 
+  unless (defined $msdbh);
+# turn on the ChopBlanks option to remove trailing whitespace in columns 
+$msdbh->{ChopBlanks} = 1;
+
+$|=1; # turn off STDOUT IO buffering
+
+# initialize the signal handler so we can cleanup nicely
+$SIG{INT} = sub {$byebye = 1;};
+
+# infinitely loop unless our interrupt flag has been set
+while (1) {
+    last if ($byebye);
+    
+    # run the stored procedure sp_monitor
+    $systh = $sydbh->prepare(q{sp_monitor}) or
+      die "Unable to prepare sy sp_monitor:".$sydbh->errstr."\n";
+    $systh->execute or 
+      die "Unable to execute sy sp_monitor:".$sydbh->errstr."\n";
+    # loop to retrieve the lines from the output we need. 
+    # We know we have all of it when we see the cpu_busy information
+    while($href = $systh->fetchrow_hashref or 
+          $systh->{syb_more_results}) {
+	# got what we needed, stop asking
+	last if (defined $href->{cpu_busy}); 
+    }
+    $systh->finish;
+    
+    # substitute out everything but the % number from 
+    # the values we receive 
+    for (keys %{$href}) {
+	$href->{$_} =~ s/.*-(\d+%)/\1/;
+    }
+
+    # collect all the data we need into a single line
+    $info = "Sybase: (".$href->{cpu_busy}." CPU), ".
+                    "(".$href->{io_busy}." IO), ".
+                    "(".$href->{idle}." idle)   ";
+
+    # ok, now let's do it all over again for the second server (MS-SQL)
+    $mssth = $msdbh->prepare(q{sp_monitor}) or
+      die "Unable to prepare ms sp_monitor:".$msdbh->errstr."\n";
+    $mssth->execute or
+      die "Unable to execute ms sp_monitor:".$msdbh->errstr."\n";
+    while($href = $mssth->fetchrow_hashref or 
+	  $mssth->{syb_more_results}) {
+	# got what we needed, stop asking
+	last if (defined $href->{cpu_busy}); 
+    }
+    $mssth->finish;
+
+    # substitute out everything but the % number from 
+    # the values we receive
+    for (keys %{$href}) {	
+	$href->{$_} =~ s/.*-(\d+%)/\1/;
+    }
+
+    $info .= "MSSQL: (" . $href->{'cpu_busy'}." CPU), ".
+                    "(".$href->{'io_busy'}." IO), ".
+                    "(".$href->{'idle'}." idle)";
+    print " "x78,"\r";
+    print $info,"\r";
+    
+    sleep(5) unless ($byebye);
+}
+
+# only end up here if we've broken out of the loop thanks to an interrupt
+$sydbh->disconnect;
+$msdbh->disconnect;  

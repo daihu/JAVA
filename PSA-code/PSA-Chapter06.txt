@@ -1,0 +1,1006 @@
+Example code from Perl for System Administration by David N. Blank-Edelman
+O'Reilly and Associates, 1st Edition, ISBN 1-56592-609-9
+
+Chapter Six
+===========
+
+#*
+#* querying a finger server using Net::Telnet
+#*
+use Net::Telnet;
+
+($username,$host) = split(/\@/,$ARGV[0]);
+$host = $host ? $host : 'localhost';
+
+# create a new connection
+$cn = new Net::Telnet(Host => $host,
+                      Port => 'finger');
+
+# send the username down this connection
+unless ($cn->print("$username")){ # could be "/W $username"
+    $cn->close;              
+    die "Unable to send finger string: ".$cn->errmg."\n";
+}
+
+# grab all of the data we receive, stopping when the 
+# connection is dropped
+while (defined $ret = $cn->get) {
+    $data .= $ret;
+}
+
+# close the connection
+$cn->close;                  
+
+# display the data we collected
+print $data;
+-------
+#*
+#* querying a daytime server using Net::Telnet
+#*
+
+use Net::Telnet;
+
+$host = $ARGV[0] ? $ARGV[0] : 'localhost';
+
+$cn = new Net::Telnet(Host => $host, 
+                       Port => 'daytime');
+
+while (defined $ret = $cn->get) {
+    $data .= $ret;
+}
+$cn->close;                  
+
+print $data;
+-------
+#*
+#* querying a finger server using Net::Finger
+#*
+
+use Net::Finger;
+
+# finger() takes a user@host string and returns the data received
+print finger($ARGV[0]); 
+-------
+#*
+#* querying a finger server by calling the finger executable
+#*
+
+($username,$host) = split('@',$ARGV[0]);
+$host = $host ? $host : 'localhost';
+
+# location of finger executable, Mac OS users can't use this method
+$fingerex = ($^O eq "MSWin32") ? $ENV{'SYSTEMROOT'}."\\System32\\finger" :
+  		  "/usr/ucb/finger";  # (could also be /usr/bin/finger)
+
+print `$fingerex ${username}\@${host}`;
+-------
+#*
+#* querying the InterNIC WHOIS server
+#*
+
+use Net::Whois;
+
+# query server, returning an object with results
+my $w = new Net::Whois::Domain $ARGV[0] or 
+   die "Can't connect to Whois server\n";
+die "No domain information found for $ARGV[0]\n" unless ($w->ok);
+
+# print out parts of that object
+print "Domain: ", $w->domain, "\n";
+print "Name: ", $w->name, "\n";
+print "Tag: ", $w->tag, "\n";
+print "Address:\n", map { "    $_\n" } $w->address;
+print "Country: ", $w->country, "\n";
+print "Record created: ".$w->record_created."\n";
+print "Record updated: ".$w->record_updated."\n";
+
+# print out name servers ($w->servers returns a list of lists)
+print "Name Servers:\n", map { "    $$_[0] ($$_[1])\n" } @{$w->servers};
+
+# print out contact list ($w->contacts returns a hash of lists)
+my($c,$t);
+if ($c = $w->contacts) {
+    print "Contacts:\n";
+    for $t (sort keys %$c) {
+        print "    $t:\n";
+        print map { "\t$_\n" } @{$$c{$t}};
+    }
+}
+-------
+#*
+#* two ways to set up the initial connection to an LDAP server
+#*
+
+use Mozilla::LDAP::Conn;
+# use empty $binddn and $passwd for anonymous bind
+$c = new Mozilla::LDAP::Conn($server, $port, $binddn, $passwd); 
+die "Unable to connect to $server" unless $c;
+# ...
+$c->close();
+
+### OR ####
+
+use Net::LDAP;
+$c = Net::LDAP->new($server, port => $port) or 
+    die "Unable to connect to $server: $@\n";
+# use no parameters to bind() for anonymous bind
+$c->bind($binddn, password => $passwd) or die "Unable to bind: $@\n"; 
+# ...
+$c->unbind();
+-------
+#*
+#* two ways to search in LDAP
+#*
+
+use Mozilla::LDAP::Conn;
+# <bind step here>
+$entry = $c->search($basedn, $scope, $filter);
+die "Bad search: ". $c->getErrorString()."\n" if $c->getErrorCode();
+
+### OR ####
+
+use Net::LDAP;
+# <bind step here>
+$searchobj = $c->search(base => $basedn, scope => $scope,filter => $filter); 
+die "Bad search, errorcode #".$searchobj->code() if $searchobj->code();
+-------
+#*
+#* two examples that take an LDAP server and send a query to them
+#* example usage: 
+#*      ldapsrch ldap.bigfoot.com '(sn=Pooh)'
+#*
+
+use Mozilla::LDAP::Conn;
+
+$server = $ARGV[0];
+$port   = getservbyname("ldap","tcp") || "389";
+$basedn = "c=US";
+$scope  = "sub";  
+
+$c = new Mozilla::LDAP::Conn($server, $port, "", ""); # anonymous bind
+die "Unable to bind to $server\n" unless $c; 
+
+$entry = $c->search($basedn, $scope, $ARGV[1]);
+die "Error in search: ". $c->getErrorString()."\n" if $c->getErrorCode();
+
+# process the return values from search()
+while ($entry) {
+    $entry->printLDIF();
+    $entry = $c->nextEntry();
+}
+$c->close();
+
+### OR ####
+
+use Net::LDAP;
+use Net::LDAP::LDIF;
+
+$server = $ARGV[0];
+$port   = getservbyname("ldap","tcp") || "389";
+$basedn = "c=US";
+$scope  = "sub";
+
+$c = new Net::LDAP($server, port=>$port) or 
+    die "Unable to connect to $server: $@\n";
+$c->bind() or die "Unable to bind: $@\n"; # anonymous bind
+
+$searchobj = $c->search(base => $basedn, scope => $scope, 
+                        filter => $ARGV[1]);
+die "Bad search, errorcode #".$searchobj->code() if $searchobj->code();
+
+# process the return values from search()
+if ($searchobj){
+    $ldif = new Net::LDAP::LDIF("-");
+    $ldif->write($searchobj->entries());
+    $ldif->done();
+}
+-------
+#*
+#*  writing LDIF using Mozilla::LDAP
+#*
+
+use Mozilla::LDAP::Conn;
+use Mozilla::LDAP::LDIF;
+
+# <perform bind & search>
+
+open(LDIF,">$LDIFfile") or die "Unable to write to $LDIFfile:$!\n";
+# create new LDIF object and pass in destination filehandle
+$ldif = new Mozilla::LDAP::LDIF(\*LDIF); 
+
+while ($entry) {
+    $ldif->writeOneEntry($entry);
+    $entry = $c->nextEntry();
+}
+
+$c->close();
+close(LDIF);
+-------
+#*
+#* writing LDIF using Net::LDAP
+#*
+
+use Net::LDAP;
+use Net::LDAP::LDIF;
+
+$server = $ARGV[0];
+$port   = getservbyname("ldap","tcp") || "389";
+$basedn = "c=US";
+$scope  = "sub";
+
+$c = new Net::LDAP($server, port=>$port) or 
+    die "Unable to connect to $server: $@\n";
+$c->bind() or die "Unable to bind: $@\n"; # anonymous bind
+
+$searchobj = $c->search(base => $basedn, scope => $scope, 
+                        filter => $ARGV[1]);
+die "Bad search, errorcode #".$searchobj->code() if $searchobj->code();
+
+# process the return values from search()
+if ($searchobj){
+    $ldif = new Net::LDAP::LDIF($filename);
+    $ldif->write($searchobj->entries());
+    $ldif->done();
+}
+-------
+#*
+#* two ways to read LDIF and add the data to an LDAP server
+#*
+
+use Mozilla::LDAP::Conn;
+use Mozilla::LDAP::LDIF;
+
+$server   = $ARGV[0];
+$LDIFfile = $ARGV[1];
+$port     = getservbyname("ldap","tcp") || "389";
+$rootdn   = "cn=Manager, ou=Systems, dc=ccs, dc=hogwarts, dc=edu";
+$pw       = "secret";
+
+# read in an LDIF file specified as the second argument 
+# on the command line 
+open(LDIF,"$LDIFfile") or die "Unable to open $LDIFfile:$!\n";
+$ldif = new Mozilla::LDAP::LDIF(\*LDIF);
+
+# parse all of the entries, store in @entries
+@entries = $ldif->readEntries(); 
+close(LDIF);
+
+# non-anonymous bind
+$c = new Mozilla::LDAP::Conn($server,$port,$rootdn,$pw); 
+die "Unable to bind to $server\n" unless $c;
+
+# iterate through our parsed entry list, attempting to add one at a time
+for (@entries){
+    $c->add($_); # add this entry to the directory
+    warn "Error in add for ". $_->getDN().": ".$c->getErrorString()."\n"
+      if $c->getErrorCode();
+}
+$c->close();
+
+### OR ####
+
+use Net::LDAP;
+use Net::LDAP::LDIF;
+
+$server   = $ARGV[0];
+$LDIFfile = $ARGV[1];
+$port     = getservbyname("ldap","tcp") or "389";
+$rootdn   = "cn=Manager, ou=Systems, dc=ccs, dc=hogwarts, dc=edu";
+$pw       = "secret";
+
+# read in an LDIF file specified as the second argument on the command line
+# last parameter is "r" for open for read, "w" for write
+# Note: these lines could be combined into:
+#    @entries = new Net::LDAP::LDIF($LDIFfile,"r")->read;
+$ldif = new Net::LDAP::LDIF($LDIFfile,"r"); 
+@entries = $ldif->read();
+
+$c = new Net::LDAP($server, port => $port) or 
+    die "Unable to connect to $server: $@\n";
+$c->bind(dn => $rootdn, password => $pw) or die "Error in bind: $@\n";
+
+for (@entries){
+    $res = $c->add($_);
+    warn "Error in add for ". $_->dn().": error code ".$res->code."\n"
+      if $res->code();
+}
+
+$c->unbind();
+-------
+#*
+#* adding an entry to a server using standard LDAP operations in Mozilla::LDAP
+#*
+
+use Mozilla::LDAP::Conn;
+
+$server   = $ARGV[0];
+$port     = getservbyname("ldap","tcp") || "389";
+$suffix   = "ou=People, ou=Systems, dc=ccs, dc=hogwarts, dc=edu";
+$rootdn   = "cn=Manager, ou=Systems, dc=ccs, dc=hogwarts, dc=edu";
+$pw       = "secret";
+
+# non-anonymous bind 
+$c = new Mozilla::LDAP::Conn($server, $port, $rootdn, $pw); 
+die "Unable to bind to $server\n" unless $c;
+
+$e = new Mozilla::LDAP::Entry;
+# DN is uid plus a suffix detailing where to put this 
+# in the directory tree
+$e->setDN("uid=$ARGV[1],$suffix"); 
+$e->addValue('uid', $ARGV[1]);
+$e->addValue('cn', $ARGV[2]);
+$c->add($e);
+die "Error in add: ". $c->getErrorString()."\n" if $c->getErrorCode();
+-------
+#*
+#* example snippet for adding an entry to a server using Net::LDAP
+#*
+
+use Net::LDAP;
+$res = $c->add(
+     dn   => 'uid=jay, ou=systems, ou=people, dc=ccs, dc=hogwarts, dc=edu',
+     attr => [ 'cn'   => 'Jay Sekora',
+	       'sn    => 'Sekora',
+               'mail' => 'jayguy@ccs.hogwarts.edu',
+               'title'=> ['Sysadmin','Part-time Lecturer'],
+               'uid'  => 'jayguy',
+             ]
+             );
+die "unable to add, errorcode #".$res->code() if $res->code();
+-------
+#*
+#* two ways to delete entries
+#*
+
+use Mozilla::LDAP::Conn;
+# <bind step here>
+# if you have an entry in hand, you can use 
+# $c->delete($entry->getDN()) instead
+$c->delete($dn) or 
+    die "unable to delete entry: ". $c->getErrorString()."\n";
+
+### OR ###
+
+use Net::LDAP;
+# <bind step here>
+$res = $c->delete($dn);
+die "unable to delete, errorcode #".$res->code() if $res->code();
+-------
+#*
+#* three ways to rename entries in LDAP
+#*
+
+use Mozilla::LDAP::Conn;
+# <bind step here>
+$c->modifyRDN($newRDN, $oldDN, $delold) or
+    die "unable to rename entry:". $c->getErrorString()."\n";
+
+### OR ###
+
+use Net::LDAP;
+# <bind step here>
+$res = $c->moddn($oldDN, 
+                 newrdn       => $newRDN, 
+                 deleteoldrdn => 1);
+die "unable to rename, errorcode #".$res->code() if $res->code();
+
+### OR ###
+
+# using enhanced version of moddn()
+use Net::LDAP;
+# <bind step here>
+$result = $c->moddn($oldDN, 
+                    newrdn       => $newRDN,
+                    deleteoldrdn => 1, 
+                    newsuperior  => $parentDN);
+die "unable to rename, errorcode #".$res->code() if $res->code();
+-------
+#*
+#* two ways to replace location attributes for all Boston personnel
+#*
+
+use Mozilla::LDAP::Conn;
+
+$server = $ARGV[0];
+$port   = getservbyname("ldap","tcp") || "389";
+$basedn = "dc=ccs,dc=hogwarts,dc=edu";
+$scope  = "sub";
+$rootdn = "cn=Manager, ou=Systems, dc=ccs, dc=hogwarts, dc=edu";
+$pw     = "secret";
+
+# non-anonymous bind 
+$c = new Mozilla::LDAP::Conn($server, $port, $rootdn, $pw); 
+die "Unable to bind to $server\n" unless $c;
+
+# notice that we ask for the least amount of info 
+# possible for a speedy search
+$entry = $c->search($basedn, $scope, "(l=Boston)", 1, '');
+die "Error in search:". $c->getErrorString()."\n" if $c->getErrorCode();
+
+if ($entry){
+    while($entry){
+        $entry->removeValue("l","Boston");
+        $entry->addValue("l","Indiana");
+        $c->update($entry);
+        die "Error in update:" . $c->getErrorString() . "\n" 
+          if $c->getErrorCode();
+        $entry = $c->nextEntry();
+    };
+}
+$c->close();
+
+### OR ###
+
+use Net::LDAP;
+
+$server   = $ARGV[0];
+$port     = getservbyname("ldap","tcp") || "389";
+$basedn   = "dc=ccs,dc=hogwarts,dc=edu";
+$scope    = "sub";
+$rootdn   = "cn=Manager, ou=Systems, dc=ccs, dc=hogwarts, dc=edu";
+$pw       = "secret";
+
+$c = new Net::LDAP($server,port => $port) or
+  die "Unable to init for $server: $@\n";
+$c->bind(dn => $rootdn, password => $pw) or die "Error in bind: $@\n";
+
+$searchobj = $c->search(base  => $basedn, filter => "(l=Boston)",
+                        scope => $scope,  attrs  => [''], 
+                        typesonly => 1);
+die "Error in search: ".$searchobj->error()."\n" if ($searchobj->code());
+
+if ($searchobj){
+    @entries = $searchobj->entries;
+    for (@entries){
+        $res=$c->modify($_->dn(), # dn() yields the DN of that entry
+                        delete => {"l" => "Boston"},
+                        add    => {"l" => "Indiana"});
+        die "unable to modify, errorcode #".$res->code() if $res->code();
+    }
+}
+
+$c->unbind();
+-------
+#*
+#* generate an LDIF file from our machine database
+#*
+
+$datafile = "database";
+$recordsep = "-=-\n";
+$suffix   = "ou=data, ou=systems, dc=ccs, dc=hogwarts, dc=edu";
+$objectclass = <<EOC;
+objectclass: top
+objectclass: machine
+EOC
+
+open(DATA,$datafile) or die "unable to open $datafile:$!\n";
+
+# Perl modules break with this, even if it is in the spec 
+# print "version: 1\n"; # 
+
+while (<DATA>) {
+    # print the header for each entry
+    if (/name:\s*(.*)/){ 
+        print "dn: cn=$1, $suffix\n";
+        print $objectclass;
+        print "cn: $1\n";
+        next;
+    }
+    # handle the multi-valued aliases attribute
+    if (s/^aliases:\s*//){
+        @aliases = split;
+        foreach $name (@aliases){
+            print "aliases: $name\n";
+        }
+        next;
+    }
+    # handle the end of record separator
+    if ($_ eq $recordsep){
+        print "\n";
+        next;
+    }
+    # otherwise, just print the attribute as we found it
+    print;
+}
+
+close(DATA);
+-------
+#*
+#* import data from our machine database directly into an LDAP server
+#*
+
+use Net::LDAP;
+use Net::LDAP::Entry;
+
+$datafile  = "database";
+$recordsep = "-=-";
+$server    = $ARGV[0];
+$port      = getservbyname("ldap","tcp") || "389";
+$suffix    = "ou=data, ou=systems, dc=ccs, dc=hogwarts, dc=edu";
+$rootdn    = "cn=Manager, o=University of Michigan, c=US";
+$pw        = "secret";
+
+$c = new Net::LDAP($server,port => $port) or 
+  die "Unable to init for $server: $@\n";
+$c->bind(dn => $rootdn,password => $pw) or die "Error in bind: $@\n";
+
+open(DATA,$datafile) or die "unable to open $datafile:$!\n";
+
+while (<DATA>) {
+    chomp;
+    # at the start of a new record, create a new entry object instance
+    if (/^name:\s*(.*)/){
+        $dn="cn=$1, $suffix";
+        $entry = new Net::LDAP::Entry;
+        $entry->add("cn",$1);
+        next;
+    }
+    # special case for multi-valued attribute
+    if (s/^aliases:\s*//){
+        $entry->add('aliases',[split()]);
+        next;
+    }
+
+    # if we have hit the end of the record, add it to the server
+    if ($_ eq $recordsep){}
+        $entry->add("objectclass",["top","machine"]);
+        $entry->dn($dn);
+        $res = $c->add($entry);
+        warn "Error in add for " . $entry->dn() . ": error code " . 
+	  $res->code."\n" if $res->code();
+        undef $entry;
+        next;
+    }
+	       
+    # add all of the other attributes
+    $entry->add(split(':\s*')); # assume single valued attributes
+}
+
+close(DATA);
+$c->unbind();
+-------
+#*
+#* generate a hosts file from data on an LDAP server
+#*
+
+use Mozilla::LDAP;
+# <bind step here>
+$entry = $c->search($basedn,'one','(objectclass=machine)',0,
+                            'cn','address','aliases');
+die "Error in search:". $c->getErrorString()."\n" if $c->getErrorCode();
+
+if ($entry){
+    print "#\n\# host file - GENERATED BY $0\n
+           # DO NOT EDIT BY HAND!\n#\n";
+    while($entry){
+        print $entry->{address}[0],"\t",
+              $entry->{cn}[0]," ",
+              join(' ',@{$entry->{aliases}}),"\n";
+        $entry = $c->nextEntry();
+    };
+}
+$c->close();
+-------
+#*
+#* find all of the machines in the LDAP directory made by Apple
+#*
+
+use Net::LDAP;
+# <bind step here>
+$searchobj = $c->search(base  => $basedn, 
+                        filter => "(manufacturer=Apple)",
+                        scope => 'one', attrs => ['cn']);
+die "Error in search: ".$searchobj->error()."\n" if ($searchobj->code());
+
+if ($searchobj){
+    for ($searchobj->entries){
+        print $_->get('cn'),"\n";
+    }
+}
+
+$c->unbind();
+-------
+#*
+#* generate a list of machine owners
+#*
+
+use Mozilla::LDAP;
+use Net::LDAP;
+# <bind step here>
+$entry = $c->search($basedn,'one','(objectclass=machine)',0,
+                            'cn','owner');
+die "Error in search:". $c->getErrorString()."\n" if $c->getErrorCode();
+
+if ($entry){
+    while($entry){
+        push(@{$owners{$entry->{owner}[0]}},$entry->{cn}[0]);
+        $entry = $c->nextEntry();
+    };
+}
+$c->close();
+for (sort keys %owners){
+    print $_.":\t".join(' ',@{$owners{$_}})."\n";
+}
+-------
+#*
+#* Check to see if the current user ID is the owner of the current UNIX 
+#* machine (pseudo-authentication)
+#*
+
+use Mozilla::LDAP::Conn;
+use Sys::Hostname;
+
+$user = (getpwuid($<))[6];
+
+$hostname = hostname;
+$hostname =~ s/^([^.]+)\..*/$1/; # strip domain name off of host
+# <bind step here>
+$entry = $c->search("cn=$hostname,$suffix",'base',"(owner=$user)",1,'');
+
+if ($entry){
+    print "Owner ($user) logged on to machine $hostname.\n";
+}
+else {
+    print "$user is not the owner of this machine ($hostname)\n.";
+}
+$c->close();
+-------
+#*
+#* determing if an ADSI object is a container object
+#*
+
+use Win32::OLE;
+use Win32::OLE::Enum;
+
+eval {$enobj = Win32::OLE::Enum->new($adsobj)};
+print "object is " . ($@ ? "not " : "") . "a container\n";
+-------
+#*
+#* querying the class of an ADSI object and the location of the schema for it
+#*
+
+use Win32::OLE;
+
+$ADsPath = "WinNT://BEESKNEES,computer";
+$adsobj  = Win32::OLE->GetObject($ADsPath) or 
+    die "Unable to retrieve the object for $ADsPath\n";
+print "This is a ".$adsobj->{Class}."object, schema is at:\n".
+    $adsobj->{Schema},"\n";
+-------
+#*
+#* show the schema interface properties of an ADSI computer object 
+#*
+
+use Win32::OLE;
+
+$ADsPath = "WinNT://BEESKNEES,computer";
+$adsobj  = Win32::OLE->GetObject($ADsPath) or 
+    die "Unable to retrieve the object for $ADsPath\n";
+$schmobj = Win32::OLE->GetObject($adsobj->{Schema}) or 
+              die "Unable to retrieve the object for $ADsPath\n";
+print join("\n",@{$schmobj->{MandatoryProperties}},
+                @{$schmobj->{OptionalProperties}}),"\n";
+-------
+#*
+#* the two different ways of retrieving/setting properties based on type
+#*
+
+# retrieving and setting INTERFACE properties
+$value = $obj->{property};
+$obj->{property} = $value;
+
+# retrieving and setting SCHEMA properties
+$value = $obj->Get("property");
+$obj->Put("property","value");
+-------
+#*
+#* searching in ADSI using ADO 
+#*
+
+use Win32::OLE 'in';
+
+# get ADO object, set the provider, open the connection
+$c = Win32::OLE->new("ADODB.Connection");
+$c->{Provider} = "ADsDSOObject";
+$c->Open("ADSI Provider");
+die Win32::OLE->LastError() if Win32::OLE->LastError();
+
+# prepare and then execute the query
+$ADsPath = "LDAP://ldapserver/dc=example,dc=com"; 
+$rs = $c->Execute("<$ADsPath>;(objectClass=Group);Name;SubTree");
+die Win32::OLE->LastError() if Win32::OLE->LastError();
+
+until ($rs->EOF){
+    print $rs->Fields(0)->{Value},"\n";
+    $rs->MoveNext;
+}
+
+$rs->Close;
+$c->Close;
+-------
+#*
+#* display the list of users in a domain using ADSI
+#*
+
+use Win32::OLE 'in';
+
+$AdsPath = "WinNT://DomainName/PDCName,computer";
+
+$c = Win32::OLE->GetObject($ADsPath) or die "Unable to get $ADsPath\n";
+
+foreach $adsobj (in $c){
+    print $adsobj->{Name},"\n" if ($adsobj->{Class} eq "User");
+}
+-------
+#*
+#* create a user and set her/his Full Name using ADSI
+#*
+
+use Win32::OLE;
+
+$ADsPath="WinNT://DomainName/ComputerName,computer";
+
+$c = Win32::OLE->GetObject($ADsPath) or die "Unable to get $ADsPath\n";
+
+# create and return a User object
+$u = $c->Create("user",$username);
+$u->SetInfo();  # we have to create the user before we modify it
+
+# no space between "Full" and "Name" allowed with WinNT: namespace
+$u->{FullName} = $fullname; 
+$u->SetInfo();
+-------
+#*
+#* create a local user and set her/his Full Name using ADSI (LDAP namespace)
+#*
+
+use Win32::OLE;
+
+$AdsPath = "LDAP://ldapserver,CN=Users,dc=example,dc=com";
+
+$c = Win32::OLE->GetObject($ADsPath) or die "Unable to get $ADsPath\n";
+
+# create and return a User object
+$u=$c->Create("user","cn=".$commonname);
+$u->{samAccountName} = $username;
+# we have to create the user in the dir before we modify it
+$u->SetInfo();
+
+# space between "Full" and "Name" required with LDAP: namespace, sigh
+$u->{'Full Name'} = $fullname; 
+$u->SetInfo();
+-------
+#*
+#* delete a user using ADSI
+#*
+
+use Win32::OLE;
+
+$AdsPath = "WinNT://DomainName/ComputerName,computer";
+
+$c = Win32::OLE->GetObject($ADsPath) or die "Unable to get $ADsPath\n";
+
+# delete the User object, note that we are bound to the container object
+$c->Delete("user",$username);
+$u->SetInfo();
+-------
+#*
+#* change a user's passwords using ADSI
+#*
+
+use Win32::OLE;
+
+$AdsPath = "WinNT://DomainName/ComputerName/".$username;
+
+$u = Win32::OLE->GetObject($ADsPath) or die "Unable to get $ADsPath\n";
+
+$u->ChangePasssword($oldpassword,$newpassword);
+$u->SetInfo();
+-------
+#*
+#* display the list of groups in a domain using ADSI
+#*
+
+use Win32::OLE 'in';
+
+$AdsPath = "WinNT://DomainName/PDCName,computer";
+
+$c = Win32::OLE->GetObject($ADsPath) or die "Unable to get $ADsPath\n";
+
+foreach $adsobj (in $c){
+    print $adsobj->{Name},"\n" if ($adsobj->{Class} eq "Group");
+}
+-------
+#*
+#* create a group using ADSI
+#*
+
+use Win32::OLE;
+
+$ADsPath="WinNT://DomainName/ComputerName,computer";
+
+$c = Win32::OLE->GetObject($ADsPath) or die "Unable to get $ADsPath\n";
+
+# create and return a User object
+$g = $c->Create("group",$groupname);
+$g->SetInfo();
+-------
+#*
+#* delete a group using ADSI
+#*
+
+use Win32::OLE;
+
+$ADsPath="WinNT://DomainName/ComputerName,computer";
+
+$c = Win32::OLE->GetObject($ADsPath) or die "Unable to get $ADsPath\n";
+
+# create and return a User object
+$c->Remove($userADsPath);
+$c->SetInfo();
+-------
+#*
+#* add a user to a group using ADSI
+#*
+
+use Win32::OLE;
+
+$AdsPath = "WinNT://DomainName/GroupName,group";
+
+$g = Win32::OLE->GetObject($ADsPath) or die "Unable to get $ADsPath\n";
+
+# this uses the AdsPath to a specific user object
+$g->Add($userADsPath);
+$g->SetInfo();
+-------
+#*
+#* 
+#*
+
+use Win32::OLE;
+
+$AdsPath = "WinNT://ComputerName/lanmanserver";
+
+$c = Win32::OLE->GetObject($ADsPath) or die "Unable to get $ADsPath\n";
+
+$s = $c->Create("fileshare",$sharename);
+$s->{path}        = 'C:\directory';
+$s->{description} = "This is a Perl created share";
+$s->SetInfo();
+-------
+#*
+#* list print queues and info using ADSI
+#*
+
+use Win32::OLE 'in';
+
+$ADsPath="WinNT://DomainName/PrintServerName,computer";
+
+$c = Win32::OLE->GetObject($ADsPath) or die "Unable to get $ADsPath\n";
+
+foreach $adsobj (in $c){
+    print $adsobj->{Name}.":".$adsobj->{Model}."\n" 
+      if ($adsobj->{Class} eq "PrintQueue");
+}
+-------
+#*
+#* show printer queue status using ADSI
+#*
+
+use Win32::OLE 'in';
+
+# this table comes from this section in the ADSI 2.5 SDK:
+# 'Active Directory Service Interfaces 2.5->ADSI Reference->
+# ADSI Interfaces->Dynamic Object Interfaces->IADsPrintQueueOperations->
+# IADsPrintQueueOperations Property Methods' (phew)
+
+%status = 
+  (0x00000001 => 'PAUSED',            0x00000002 => 'PENDING_DELETION',
+   0x00000003 => 'ERROR' ,            0x00000004 => 'PAPER_JAM',
+   0x00000005 => 'PAPER_OUT',         0x00000006 => 'MANUAL_FEED',
+   0x00000007 => 'PAPER_PROBLEM',     0x00000008 => 'OFFLINE',
+   0x00000100 => 'IO_ACTIVE',         0x00000200 => 'BUSY',
+   0x00000400 => 'PRINTING',          0x00000800 => 'OUTPUT_BIN_FULL',
+   0x00001000 => 'NOT_AVAILABLE',     0x00002000 => 'WAITING',
+   0x00004000 => 'PROCESSING',        0x00008000 => 'INITIALIZING',
+   0x00010000 => 'WARMING_UP',        0x00020000 => 'TONER_LOW',
+   0x00040000 => 'NO_TONER',          0x00080000 => 'PAGE_PUNT',
+   0x00100000 => 'USER_INTERVENTION', 0x00200000 => 'OUT_OF_MEMORY',
+   0x00400000 => 'DOOR_OPEN',         0x00800000 => 'SERVER_UNKNOWN',
+   0x01000000 => 'POWER_SAVE');
+
+$ADsPath = "WinNT://PrintServerName/PrintQueueName";
+
+$p = Win32::OLE->GetObject($ADsPath) or die "Unable to get $ADsPath\n";
+
+print "The printer status for " . $c->{Name} . " is " .
+   ((exists $p->{status}) ? $status{$c->{status}} : "NOT ACTIVE") . "\n";
+-------
+#*
+#* show the jobs in a particular print queue using ADSI
+#*
+
+use Win32::OLE 'in';
+
+# this table comes from this section in the ADSI 2.5 SDK:
+# 'Active Directory Service Interfaces 2.5->ADSI Reference->
+# ADSI Interfaces->Dynamic Object Interfaces->IADsPrintJobOperations->
+# IADsPrintJobOperations Property Methods' (double phew)
+
+%status = (0x00000001 => 'PAUSED',  0x00000002 => 'ERROR',
+           0x00000004 => 'DELETING',0x00000010 => 'PRINTING',
+           0x00000020 => 'OFFLINE', 0x00000040 => 'PAPEROUT',
+           0x00000080 => 'PRINTED', 0x00000100 => 'DELETED');
+
+$ADsPath = "WinNT://PrintServerName/PrintQueueName";
+
+$p = Win32::OLE->GetObject($ADsPath) or die "Unable to get $ADsPath\n";
+
+$jobs = $p->PrintJobs();
+foreach $job (in $jobs){
+    print $job->{User} . "\t" . $job->{Description} . "\t" . 
+      $status{$job->{status}} . "\n";
+}
+-------
+#*
+#* show the services on a machine and their current status
+#*
+
+use Win32::OLE 'in';
+
+# this table comes from this section in the ADSI 2.5 SDK:
+# 'Active Directory Service Interfaces 2.5->ADSI Reference->
+# ADSI Interfaces->Dynamic Object Interfaces->IADsServiceOperations->
+# IADsServiceOperations Property Methods'
+
+%status = 
+  (0x00000001 => 'STOPPED',         0x00000002 => 'START_PENDING',
+   0x00000003 => 'STOP_PENDING',    0x00000004 => 'RUNNING',
+   0x00000005 => 'CONTINUE_PENDING',0x00000006 => 'PAUSE_PENDING',
+   0x00000007 => 'PAUSED',          0x00000008 => 'ERROR');
+ 
+$ADsPath = "WinNT://DomainName/ComputerName,computer";
+
+$c = Win32::OLE->GetObject($ADsPath) or die "Unable to get $ADsPath\n";
+
+foreach $adsobj (in $c){
+    print $adsobj->{DisplayName} . ":" . $status{$adsobj->{status}} . "\n" 
+      if ($adsobj->{Class} eq "Service");
+}
+-------
+#*
+#* two ways to start the W32Time service using ADSI
+#*
+
+use Win32::OLE;
+
+$ADsPath = "WinNT://DomainName/ComputerName/W32Time,service";
+
+$s = Win32::OLE->GetObject($ADsPath) or die "Unable to get $ADsPath\n";
+
+$s->Start();
+# may wish to check status at this point, looping until it is started
+
+### OR ###
+
+use Win32::OLE;
+
+$d = Win32::OLE->GetObject("WinNT://Domain");
+$c = $d->GetObject("Computer", $computername);
+$s = $c->GetObject("Service", "W32Time");
+
+$s->Start();
+# may wish to check status at this point, looping until it is started
+-------
+#*
+#* stopping the W32Time service using ADSI
+#*
+
+use Win32::OLE;
+
+$d = Win32::OLE->GetObject("WinNT://Domain");
+$c = $d->GetObject("Computer", $computername);
+$s = $c->GetObject("Service", "W32Time");
+
+$s->Stop();
+# may wish to check status at this point, looping until it is stopped
