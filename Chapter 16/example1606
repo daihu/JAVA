@@ -1,4 +1,4 @@
-#!c:/ActivePerl/bin/perl.exe
+#!/usr/bin/perl
 $now=localtime;
  $myname="Willie";
  print <<EOF;
