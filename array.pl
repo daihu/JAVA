@@ -1,3 +1,4 @@
+severity = 1
 #!/usr/bin/perl
 @list=(2012..3012);
 foreach $hehe(@list){

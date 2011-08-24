@@ -1,6 +1,5 @@
 #!/bin/perl
 use DBI;
-
 #use warnings;
 #use strict;
 #use utf8;
@@ -19,18 +18,13 @@ $contentdel="此评论已被删除!";
 my $sqr = $dbh->prepare("update m_newmessage set commentInfo='$contentdel'
 where commentInfo like  '%baixing.com%'");
 
-my $sqr = $dbh->prepare("update m_newmessage set description='$contentdel'
+my $sqr= $dbh->prepare("update m_newmessage set description='$contentdel'
 where description like  '%baixing.com%'");
 $sqr->execute();
 
 
-while ( my $ref = $sqr->fetchrow_hashref() ) {
-	print "$ref->{'id'}\n";
-	print "$ref->{itemId}\n ";
-	print "$ref->{resUrl}\n ";
-	print "$ref->{version}\n ";
-	print "------------------------\n"
-
-}
+my $sqr= $dbh->prepare("update m_newmessage set description='$contentdel'
+where description like  '%baixing.com%'");
+$sqr->execute();
 
 $dbh->disconnect();
