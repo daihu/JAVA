@@ -156,3 +156,9 @@ mysql>
 
 cricket nagios
 
+
+
+http://forge.mysql.com/
+
+http://planet.mysql.com/
+
