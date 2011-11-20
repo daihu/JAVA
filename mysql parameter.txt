@@ -1,0 +1,124 @@
+mysqladmin extended-status -r -i 5
+
+
+mysql> show global status like 'Created_tmp%';
++-------------------------+-------+
+| Variable_name           | Value |
++-------------------------+-------+
+| Created_tmp_disk_tables | 0     | 
+| Created_tmp_files       | 5     | 
+| Created_tmp_tables      | 6     | 
++-------------------------+-------+
+3 rows in set (0.00 sec)
+
+mysql> 
+
+mysql> show global status like 'Key%';
++------------------------+--------+
+| Variable_name          | Value  |
++------------------------+--------+
+| Key_blocks_not_flushed | 0      | 
+| Key_blocks_unused      | 231960 | 
+| Key_blocks_used        | 0      | 
+| Key_read_requests      | 0      | 
+| Key_reads              | 0      | 
+| Key_write_requests     | 0      | 
+| Key_writes             | 0      | 
++------------------------+--------+
+7 rows in set (0.00 sec)
+
+mysql> 
+
+mysql> show global status like 'Open%';
++--------------------------+-------+
+| Variable_name            | Value |
++--------------------------+-------+
+| Open_files               | 20    | 
+| Open_streams             | 0     | 
+| Open_table_definitions   | 33    | 
+| Open_tables              | 26    | 
+| Opened_files             | 82    | 
+| Opened_table_definitions | 33    | 
+| Opened_tables            | 33    | 
++--------------------------+-------+
+7 rows in set (0.00 sec)
+
+mysql> 
+
+mysql> show global status like 'Qcache%';
++-------------------------+----------+
+| Variable_name           | Value    |
++-------------------------+----------+
+| Qcache_free_blocks      | 1        | 
+| Qcache_free_memory      | 16768384 | 
+| Qcache_hits             | 0        | 
+| Qcache_inserts          | 0        | 
+| Qcache_lowmem_prunes    | 0        | 
+| Qcache_not_cached       | 3        | 
+| Qcache_queries_in_cache | 0        | 
+| Qcache_total_blocks     | 1        | 
++-------------------------+----------+
+8 rows in set (0.00 sec)
+
+mysql> show global status like 'Select_%';
++------------------------+-------+
+| Variable_name          | Value |
++------------------------+-------+
+| Select_full_join       | 0     | 
+| Select_full_range_join | 0     | 
+| Select_range           | 0     | 
+| Select_range_check     | 0     | 
+| Select_scan            | 11    | 
++------------------------+-------+
+5 rows in set (0.00 sec)
+
+mysql> 
+
+mysql> show global status like 'Sort_%';
++-------------------+-------+
+| Variable_name     | Value |
++-------------------+-------+
+| Sort_merge_passes | 0     | 
+| Sort_range        | 0     | 
+| Sort_rows         | 0     | 
+| Sort_scan         | 0     | 
++-------------------+-------+
+4 rows in set (0.00 sec)
+
+mysql> 
+
+mysql> show global status like 'Ssl_%';
++--------------------------------+-------+
+| Variable_name                  | Value |
++--------------------------------+-------+
+| Ssl_accept_renegotiates        | 0     | 
+| Ssl_accepts                    | 0     | 
+| Ssl_callback_cache_hits        | 0     | 
+| Ssl_cipher                     |       | 
+| Ssl_cipher_list                |       | 
+| Ssl_client_connects            | 0     | 
+| Ssl_connect_renegotiates       | 0     | 
+| Ssl_ctx_verify_depth           | 0     | 
+| Ssl_ctx_verify_mode            | 0     | 
+| Ssl_default_timeout            | 0     | 
+| Ssl_finished_accepts           | 0     | 
+| Ssl_finished_connects          | 0     | 
+| Ssl_session_cache_hits         | 0     | 
+| Ssl_session_cache_misses       | 0     | 
+| Ssl_session_cache_mode         | NONE  | 
+| Ssl_session_cache_overflows    | 0     | 
+| Ssl_session_cache_size         | 0     | 
+| Ssl_session_cache_timeouts     | 0     | 
+| Ssl_sessions_reused            | 0     | 
+| Ssl_used_session_cache_entries | 0     | 
+| Ssl_verify_depth               | 0     | 
+| Ssl_verify_mode                | 0     | 
+| Ssl_version                    |       | 
++--------------------------------+-------+
+23 rows in set (0.00 sec)
+
+
+bash-3.1# ./mk-deadlock-logger --host 127.0.0.1
+bash-3.1# 
+
+
