@@ -162,3 +162,5 @@ http://forge.mysql.com/
 
 http://planet.mysql.com/
 
+http://planet.mysql.com/rss20.xml
+
