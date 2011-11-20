@@ -143,3 +143,16 @@ mysql> select d.Host,d.Db,d.User from mysql.db as d
 ./mysqlbinlog --database=mysql /usr/local/mysql/data/mysql-bin.000005 | grep -B 3 -i 'mysql'
 
 
+mysql> show full processlist;
++----+------+-----------+------+---------+------+-------+-----------------------+
+| Id | User | Host      | db   | Command | Time | State | Info                  |
++----+------+-----------+------+---------+------+-------+-----------------------+
+|  1 | root | localhost | NULL | Query   |    0 | NULL  | show full processlist | 
++----+------+-----------+------+---------+------+-------+-----------------------+
+1 row in set (0.00 sec)
+
+mysql> 
+
+
+cricket nagios
+
