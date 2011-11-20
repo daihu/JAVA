@@ -122,3 +122,24 @@ bash-3.1# ./mk-deadlock-logger --host 127.0.0.1
 bash-3.1# 
 
 
+mysql> select d.Host,d.Db,d.User from mysql.db as d 
+    -> ;
++------+---------+------+
+| Host | Db      | User |
++------+---------+------+
+| %    | test    |      | 
+| %    | test\_% |      | 
++------+---------+------+
+2 rows in set (0.02 sec)
+
+
+
+
+
+/usr/bin/find /usr/local/mysql/data/ -mtime +N -name "mysql-bin.[0-9]*" | xargs rm 
+
+
+
+./mysqlbinlog --database=mysql /usr/local/mysql/data/mysql-bin.000005 | grep -B 3 -i 'mysql'
+
+
