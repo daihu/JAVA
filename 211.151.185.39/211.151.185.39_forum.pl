@@ -1,7 +1,5 @@
 #!/bin/perl
 use warnings;
-
-#use strict;
 use DBI;
 my $fid  = "0";
 my $url  = "";
@@ -20,20 +18,14 @@ my $sqr =
 $sqr->execute();
 
 while ( my $ref = $sqr->fetchrow_hashref() ) {
-	$url =$url . $link . $ref->{'tid'} . "'>" . $ref->{'subject'} . "</a></li>";
+	$url =
+	    $url . $link. $ref->{'tid'} . "'>". $ref->{'subject'}
+	  . "</a></li>";
 
-	#    print "$url\n";
 
-	#print "$ref->{subject}\n ";
-	#       print "$ref->{iconUrl}\n ";
-	#       print "$ref->{labels}\n ";
-	#       print "$ref->{name}\n ";
-	#       print "$ref->{sortFlag}\n ";
-	#       print "$ref->{version}\n ";
-	#       print "------------------------\n"
 
 }
 $dbh->disconnect();
-$out = "file_fid_" . $fid;
+$out = "file_fid_ . $fid.htm";
 open OUT, ">:encoding(utf8)", $out or die $!;
 print OUT $url;
