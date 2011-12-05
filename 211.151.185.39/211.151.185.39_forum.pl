@@ -26,6 +26,6 @@ while ( my $ref = $sqr->fetchrow_hashref() ) {
 
 }
 $dbh->disconnect();
-$out = "file_fid_ . $fid.htm";
+$out = "file_fid_.$fid.htm";
 open OUT, ">:encoding(utf8)", $out or die $!;
 print OUT $url;
