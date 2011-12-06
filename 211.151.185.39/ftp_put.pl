@@ -5,7 +5,7 @@ $username = "eschange123";
 $password = "eschange123";
 $ftp->login($username, $password) or die "Could not log in.\n";
 $ftp->binary();
- $ftp->cwd('/bbs');
+$ftp->cwd('/bbs');
 $remote= "file_fid_0.htm";
 $local = "file_fid_0.htm";
 $ftp->put($remote,$local)or die "Could not put remotefile:remote\n";
