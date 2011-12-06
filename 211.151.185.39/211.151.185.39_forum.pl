@@ -13,7 +13,7 @@ $dbh->do("set names utf8");
 my $sqr =
   $dbh->prepare( "select * from pre_forum_post "
 	  . ( $fid > 0 ? "where fid=$fid" : "" )
-	  . "   order by  tid desc " );
+	  . "   order by  tid desc limit 0,7  " );
 
 $sqr->execute();
 
