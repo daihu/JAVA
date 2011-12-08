@@ -1,7 +1,7 @@
 #!/bin/perl
 use warnings;
 use DBI;
-my $fid  = "0";
+my $fid  = "$ARGV[0]";
 my $url  = "";
 my $link = "<li><a href='http://club.zhazh.com/forum.php?mod=viewthread&tid=";
 
