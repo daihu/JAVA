@@ -6,7 +6,7 @@ my $url  = "";
 my $link = "<li><a href='http://club.zhazh.com/forum.php?mod=viewthread&tid=";
 
 my $dbh = DBI->connect( "DBI:mysql:database=vote;host=211.151.185.39",
-	"vote", "ESChange1208", { 'mysql_enable_utf8' => 1 } )
+	"vote", "vote", { 'mysql_enable_utf8' => 1 } )
   || die "Cannot connect to database:" . DBI->errstr;
 
 $dbh->do("set names utf8");

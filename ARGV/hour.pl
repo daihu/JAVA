@@ -11,3 +11,6 @@
 
 
 #forum.pl 44
+
+
+#2 * * * *  /bin/date>>/root/123.txt
