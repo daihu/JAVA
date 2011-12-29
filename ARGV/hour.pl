@@ -13,4 +13,4 @@
 #forum.pl 44
 
 
-#2 * * * *  /bin/date>>/root/123.txt
+2 * * * *   /usr/bin/perl /usr/local/src/forum_44.pl
