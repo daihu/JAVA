@@ -3,7 +3,7 @@ $ENV{PATH}="/usr/lib64/qt-3.3/bin:/usr/kerberos/sbin:/usr/kerberos/bin:/usr/loca
 use warnings;
 #use strict;
 use DBI;
-my $fid="44";
+my $fid=" $ARGV[0]";
 my $url="";
 my $link="<li><a href='http://club.zhazh.com/forum.php?mod=viewthread&tid=";
 
