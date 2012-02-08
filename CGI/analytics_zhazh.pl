@@ -7,7 +7,5 @@ $data_file="localhost_access_log.2012-02-08.txt";
 open(FH,$data_file) || die("Could not open file!");
  while(<FH>){
  	 print if m/200/ ;
- 	 my $count++;
- 	 print $count
 }
      
